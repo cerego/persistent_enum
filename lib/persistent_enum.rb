@@ -13,7 +13,7 @@ module PersistentEnum
   extend ActiveSupport::Concern
 
   module ClassMethods
-    def acts_as_enum(required_constants = [], name_attr: :name)
+    def acts_as_enum(required_constants, name_attr: :name)
       include ActsAsEnum
       initialize_acts_as_enum(required_constants, name_attr)
     end
@@ -50,57 +50,101 @@ module PersistentEnum
   end
 
   class << self
-    # Given an 'enum-like' table with (id, name) structure and a set of names,
+    # Given an 'enum-like' table with (id, name, ...) structure and a set of
+    # enum members specified as either [name, ...] or {name: {attr: val, ...}, ...},
     # ensure that there is a row in the table corresponding to each name, and
     # cache the models as constants on the model class.
-    def cache_constants(model, required_constants, name_attr: :name)
+    def cache_constants(model, required_members, name_attr: :name)
+      # normalize member specification
+      unless required_members.is_a?(Hash)
+        required_members = required_members.each_with_object({}) { |c, h| h[c] = {} }
+      end
+
       # We need to cope with (a) loading this class and (b) ensuring that all the
       # constants are defined (if not functional) in the case that the database
       # isn't present yet. If no database is present, create dummy values to
       # populate the constants.
       if model.table_exists?
-        # Ensure that each of the specified required constants is present
-        values = required_constants.map do |rc|
-          model.where(name_attr => rc.to_s).first_or_create
+        table_attributes = model.attribute_names - ["id", name_attr.to_s]
+
+        values = model.where(name_attr => required_members.keys).index_by { |m| m.read_attribute(name_attr) }
+
+        # Update or create
+        required_members.each do |name, attrs|
+          name = name.to_s
+          attr_names = attrs.keys.map(&:to_s)
+
+          if attr_names != table_attributes
+            raise ArgumentError.new("Enum member attribute mismatch: expected #{table_attributes.inspect}, received #{attr_names.inspect}")
+          end
+
+          current = values[name]
+
+          if current.present?
+            current.assign_attributes(attrs)
+            current.save! if current.changed?
+          else
+            values[name] = model.create(name_attr => name, **attrs)
+          end
         end
+
+        # discard index
+        values = values.values
       else
         puts "Database table for model #{model.name} doesn't exist, initializing constants with dummy records instead."
         dummyclass = build_dummy_class(model, name_attr)
 
         next_id = 999999999
-        values = required_constants.map do |rc|
-          dummyclass.new(next_id += 1, rc.to_s)
+        values = required_members.map do |member_name, attrs|
+          dummyclass.new(next_id += 1, member_name.to_s, attrs)
         end
       end
 
-      # Set each value as a constant on this class. If reloading, only update if
-      # it's changed.
-      to_constant_name = ->(s){
-        value = s.strip.gsub(/[^\w\s-]/, '_').underscore
-        return nil if value.blank?
-        value.gsub!(/\s+/, '_')
-        value.gsub!(/_{2,}/, '_')
-        value.upcase!
-        value
-      }
-      values.each do |value|
-        constant_name = to_constant_name.call(value.read_attribute(name_attr))
-        unless model.const_defined?(constant_name, false) && model.const_get(constant_name, false) == value
-          model.const_set(constant_name, value)
-        end
-      end
+      cache_values(model, values, name_attr)
 
       values
     end
 
+    # Given an 'enum-like' table with (id, name, ...) structure, load existing
+    # records from the database and cache them in constants on this class
+    def cache_records(model, name_attr: :name)
+      if model.table_exists?
+        values = model.scoped
+        cache_values(model, values, name_attr)
+      else
+        puts "Database table for model #{model.name} doesn't exist, no constants cached."
+      end
+    end
+
     private
+
+    # Set each value as a constant on this class. If reloading, only update if
+    # it's changed.
+    def cache_values(model, values, name_attr)
+      values.each do |value|
+        constant_name = constant_name(value.read_attribute(name_attr))
+        unless model.const_defined?(constant_name, false) && model.const_get(constant_name, false) == value
+          model.const_set(constant_name, value)
+        end
+      end
+    end
+
+    def constant_name(member_name)
+      value = member_name.strip.gsub(/[^\w\s-]/, '_').underscore
+      return nil if value.blank?
+      value.gsub!(/\s+/, '_')
+      value.gsub!(/_{2,}/, '_')
+      value.upcase!
+      value
+    end
 
     class AbstractDummyModel
       attr_reader :ordinal, :enum_constant
 
-      def initialize(id, name)
-        @ordinal = id
+      def initialize(id, name, attributes = {})
+        @ordinal       = id
         @enum_constant = name
+        @attributes    = attributes.with_indifferent_access
       end
 
       def to_sym
@@ -110,17 +154,34 @@ module PersistentEnum
       alias_method :id, :ordinal
 
       def read_attribute(attr)
-        case attr
-        when :id
+        case attr.to_s
+        when "id"
           ordinal
-        when self.class.name_attr
+        when self.class.name_attr.to_s
           enum_constant
         else
-          nil
+          @attributes[attr]
         end
       end
 
       alias_method :[], :read_attribute
+
+      def method_missing(m, *args)
+        m = m.to_s
+        case
+        when m == "id"
+          ordinal
+        when m == self.class.name_attr.to_s
+          enum_constant
+        when @attributes.has_key?(m)
+          if args.size > 0
+            raise ArgumentError.new("wrong number of arguments (#{args.size} for 0)")
+          end
+          @attributes[m]
+        else
+          super
+        end
+      end
 
       def self.for_name(name_attr)
         Class.new(self) do

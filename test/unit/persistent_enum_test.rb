@@ -62,9 +62,28 @@ class PersistentEnumTest < ActiveSupport::TestCase
     assert_equal(expected, Set.new(TestPersistentEnum.all.map(&:to_sym)))
   end
 
+  def test_dummy_values
+    TestPersistentEnumWithoutTable.values.each do |val|
+      i = val.ordinal
+      c = val.enum_constant
+
+      assert(c.is_a?(String))
+      assert_equal(c, val.name)
+      assert_equal(c, val["name"])
+      assert_equal(c, val[:name])
+
+      assert(i.is_a?(Integer))
+      assert_equal(i, val.id)
+      assert_equal(i, val["id"])
+      assert_equal(i, val[:id])
+    end
+  end
+
   def test_existing_data
+    initial_value = nil
+
     create_test_model(:test_existing, ->(t){ t.string :name }) do
-      create(name: CONSTANTS.first.to_s)
+      initial_value = create(name: CONSTANTS.first.to_s)
       create(name: "Hello") # Not one of the constants
       acts_as_enum(CONSTANTS)
     end
@@ -85,6 +104,10 @@ class PersistentEnumTest < ActiveSupport::TestCase
     assert_equal(expected_required, TestExisting.ordinals.sort)
     assert_equal(expected_all, TestExisting.all_ordinals.sort)
     assert_equal(expected_all, TestExisting.pluck(:id).sort)
+
+    # Prepopulated value should still exist and not have changed ID
+    assert_equal(initial_value, TestExisting.value_of(initial_value.enum_constant))
+    assert_equal(initial_value, TestExisting.where(name: initial_value.enum_constant).first)
 
     # Should be able to look up existing value by id or name
     existing_value = TestExisting.where(name: "Hello").first
@@ -154,7 +177,7 @@ class PersistentEnumTest < ActiveSupport::TestCase
 
       # Should be able to create from enum value or constant
       [c, e].each do |arg|
-        t = TestBelongsToEnum.new(test_persistent_enum: c)
+        t = TestBelongsToEnum.new(test_persistent_enum: arg)
         assert(t.valid?)
         assert_equal(t.test_persistent_enum, e)
         assert_equal(t.test_persistent_enum_id, e.ordinal)
@@ -180,7 +203,80 @@ class PersistentEnumTest < ActiveSupport::TestCase
     end
   end
 
-private
+  def test_extra_fields
+    members = {
+      :One   => { count: 1 },
+      :Two   => { count: 2 },
+      :Three => { count: 3 }
+    }
+
+    create_test_model(:test_extra_field, ->(t){ t.string :name; t.integer :count }) do
+      # pre-existing matching and non-matching data
+      create(name: "One", count: 3)
+      create(name: "Two", count: 2)
+
+      acts_as_enum(members)
+    end
+
+    create_test_model(:test_extra_field_without_table, nil, create_table: false) do
+      acts_as_enum(members)
+    end
+
+    [TestExtraField, TestExtraFieldWithoutTable].each do |table|
+      members.each do |name, fields|
+        ev = table.value_of(name)
+
+        # Ensure it exists and is correctly saved
+        assert(ev.present?)
+
+        # Ensure it's correctly saved
+        if table.table_exists?
+          assert_equal(ev, TestExtraField.where(name: name).first)
+        end
+
+        # and that fields have been correctly set
+        fields.each do |fname, fvalue|
+          assert_equal(fvalue, ev[fname])
+        end
+      end
+    end
+
+    # Ensure attributes must match table
+    assert_raises(ArgumentError) do
+      create_test_model(:test_invalid_args_a, ->(t){ t.string :name; t.integer :count }) do
+        acts_as_enum([:One])
+      end
+    end
+
+    assert_raises(ArgumentError) do
+      create_test_model(:test_invalid_args_b, ->(t){ t.string :name; t.integer :count }) do
+        acts_as_enum({ :One => { incorrect: 1 } })
+      end
+    end
+
+    assert_raises(ArgumentError) do
+      create_test_model(:test_invalid_args_c, ->(t){ t.string :name }) do
+        acts_as_enum({ :One => { incorrect: 1 } })
+      end
+    end
+  end
+
+  def test_name_attr
+    create_test_model(:test_new_name, ->(t){ t.string :namey }) do
+      acts_as_enum(CONSTANTS, name_attr: :namey)
+    end
+
+    CONSTANTS.each do |c|
+      e = TestNewName.value_of(c)
+      assert(e.present?)
+      assert(e.enum_constant.is_a?(String))
+      assert_equal(e.to_sym, c)
+      assert_equal(e, TestNewName[e.ordinal])
+      assert_equal(e, TestNewName.const_get(c.upcase))
+    end
+  end
+
+  private
 
   def create_test_model(name, columns, create_table: true, &block)
     if create_table
