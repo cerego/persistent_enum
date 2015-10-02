@@ -81,7 +81,7 @@ module PersistentEnum
           current = values[name]
 
           if current.present?
-            current.assign_attributes(attrs)
+            current.assign_attributes(attrs, without_protection: true)
             current.save! if current.changed?
           else
             values[name] = model.create(name_attr => name, **attrs)

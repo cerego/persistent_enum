@@ -211,9 +211,10 @@ class PersistentEnumTest < ActiveSupport::TestCase
     }
 
     create_test_model(:test_extra_field, ->(t){ t.string :name; t.integer :count }) do
-      # pre-existing matching and non-matching data
+      # pre-existing matching, non-matching, and outdated data
       create(name: "One", count: 3)
       create(name: "Two", count: 2)
+      create(name: "Zero", count: 0)
 
       acts_as_enum(members)
     end
@@ -228,6 +229,10 @@ class PersistentEnumTest < ActiveSupport::TestCase
 
         # Ensure it exists and is correctly saved
         assert(ev.present?)
+        assert(table.values.include?(ev))
+        assert(table.all_values.include?(ev))
+
+        assert_equal(ev, table[ev.ordinal])
 
         # Ensure it's correctly saved
         if table.table_exists?
@@ -240,6 +245,14 @@ class PersistentEnumTest < ActiveSupport::TestCase
         end
       end
     end
+
+    # and check that outdated data persists
+    z = TestExtraField.value_of("Zero")
+    assert_present(z)
+    assert_equal(z, TestExtraField[z.ordinal])
+    assert_equal(0, z.count)
+    assert(TestExtraField.all_values.include?(z))
+    assert(!TestExtraField.values.include?(z))
 
     # Ensure attributes must match table
     assert_raises(ArgumentError) do
