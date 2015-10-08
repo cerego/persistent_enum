@@ -45,7 +45,11 @@ module PersistentEnum
         write_attribute(foreign_key, id)
       end
 
-      validates foreign_key, inclusion: { in: ->(r){ target_class.ordinals } }, allow_nil: true
+      # All enum members must be valid
+      validates foreign_key, inclusion: { in: ->(r){ target_class.all_ordinals } }, allow_nil: true
+
+      # New enum members must be currently active
+      validates foreign_key, inclusion: { in: ->(r){ target_class.ordinals } }, allow_nil: true, on: :create
     end
   end
 

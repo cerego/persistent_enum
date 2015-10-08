@@ -114,6 +114,8 @@ class PersistentEnumTest < ActiveSupport::TestCase
     assert_equal(existing_value, TestExisting[existing_value.ordinal])
     assert_equal(existing_value, TestExisting.value_of(existing_value.enum_constant))
 
+    assert(!existing_value.active?)
+
     destroy_test_model(:test_existing)
   end
 

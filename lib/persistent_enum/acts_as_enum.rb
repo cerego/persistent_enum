@@ -87,18 +87,26 @@ module PersistentEnum
 
       alias_method :with_name, :value_of
 
+      # Currently active ordinals
       def ordinals
         @acts_as_enum_state.required_by_ordinal.keys
       end
 
+      # Currently active enum members
       def values
         @acts_as_enum_state.required_by_ordinal.values
       end
 
+      def active?(member)
+        @acts_as_enum_state.required_by_ordinal.has_key?(member.ordinal)
+      end
+
+      # All ordinals, including of inactive enum members
       def all_ordinals
         @acts_as_enum_state.by_ordinal.keys
       end
 
+      # All enum members, including inactive
       def all_values
         @acts_as_enum_state.by_ordinal.values
       end
@@ -124,6 +132,11 @@ module PersistentEnum
 
     def ordinal
       read_attribute(:id)
+    end
+
+    # Is this enum member still present in the enum declaration?
+    def active?
+      self.class.active?(self)
     end
 
     class << self
