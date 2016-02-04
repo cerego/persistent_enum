@@ -13,8 +13,20 @@ module PersistentEnum
   extend ActiveSupport::Concern
 
   module ClassMethods
-    def acts_as_enum(required_constants, name_attr: :name)
+    def acts_as_enum(required_constants, name_attr: :name, &constant_init_block)
       include ActsAsEnum
+
+      if block_given?
+        unless required_constants.blank?
+          raise ArgumentError.new("Constants may not be provided both by argument and builder block")
+        end
+        required_constants = ConstantEvaluator.new.evaluate(&constant_init_block)
+      end
+
+      unless required_constants.present?
+        raise ArgumentError.new("No enum constants specified")
+      end
+
       initialize_acts_as_enum(required_constants, name_attr)
     end
 
@@ -22,9 +34,8 @@ module PersistentEnum
     # done via the enumeration type's cache rather than ActiveRecord. The
     # setter accepts either a model type or the enum constant name as a symbol
     # or string.
-    def belongs_to_enum(enum_name, options = {})
-      target_class = (options[:class_name] || enum_name.to_s.camelize).constantize
-      foreign_key  = options[:foreign_key] || "#{enum_name}_id"
+    def belongs_to_enum(enum_name, class_name: enum_name.to_s.camelize, foreign_key: "#{enum_name}_id")
+      target_class = class_name.constantize
 
       define_method(enum_name) do
         target_id = read_attribute(foreign_key)
@@ -50,6 +61,18 @@ module PersistentEnum
 
       # New enum members must be currently active
       validates foreign_key, inclusion: { in: ->(r){ target_class.ordinals } }, allow_nil: true, on: :create
+    end
+  end
+
+  class ConstantEvaluator
+    def evaluate(&block)
+      @constants = {}
+      self.instance_eval(&block)
+      @constants
+    end
+
+    def method_missing(name, **args)
+      @constants[name] = args
     end
   end
 
