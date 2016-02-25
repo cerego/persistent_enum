@@ -221,11 +221,19 @@ class PersistentEnumTest < ActiveSupport::TestCase
       acts_as_enum(members)
     end
 
+    create_test_model(:test_extra_field_with_builder, ->(t){ t.string :name; t.integer :count }) do
+      acts_as_enum([]) do
+        One(count: 1)
+        Two(count: 2)
+        Three(count: 3)
+      end
+    end
+
     create_test_model(:test_extra_field_without_table, nil, create_table: false) do
       acts_as_enum(members)
     end
 
-    [TestExtraField, TestExtraFieldWithoutTable].each do |table|
+    [TestExtraField, TestExtraFieldWithBuilder, TestExtraFieldWithoutTable].each do |table|
       members.each do |name, fields|
         ev = table.value_of(name)
 
@@ -238,7 +246,7 @@ class PersistentEnumTest < ActiveSupport::TestCase
 
         # Ensure it's correctly saved
         if table.table_exists?
-          assert_equal(ev, TestExtraField.where(name: name).first)
+          assert_equal(ev, table.where(name: name).first)
         end
 
         # and that fields have been correctly set
@@ -274,7 +282,12 @@ class PersistentEnumTest < ActiveSupport::TestCase
         acts_as_enum({ :One => { incorrect: 1 } })
       end
     end
+
+    destroy_test_model(:test_extra_field)
+    destroy_test_model(:test_extra_field_with_builder)
+    destroy_test_model(:test_extra_field_without_table)
   end
+
 
   def test_name_attr
     create_test_model(:test_new_name, ->(t){ t.string :namey }) do
@@ -289,6 +302,8 @@ class PersistentEnumTest < ActiveSupport::TestCase
       assert_equal(e, TestNewName[e.ordinal])
       assert_equal(e, TestNewName.const_get(c.upcase))
     end
+
+    destroy_test_model(:test_new_name)
   end
 
   private
