@@ -111,7 +111,7 @@ module PersistentEnum
             current.assign_attributes(attrs)
             current.save! if current.changed?
           else
-            values[name] = model.create(name_attr => name, **attrs)
+            values[name] = model.create(attrs.merge(name_attr => name))
           end
         end
 
