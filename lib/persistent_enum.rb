@@ -143,6 +143,18 @@ module PersistentEnum
       end
     end
 
+    def dummy_class(model)
+      if model.const_defined?(:DummyModel, false)
+        dummy_class = model::DummyModel
+        unless dummy_class.superclass == AbstractDummyModel && dummy_class.name_attr == name_attr
+          raise NameError.new("PersistentEnum dummy class type mismatch: '#{dummy_class.inspect}' does not match '#{model.name}'")
+        end
+        dummy_class
+      else
+        nil
+      end
+    end
+
     private
 
     # Set each value as a constant on this class. If reloading, only update if
@@ -219,17 +231,12 @@ module PersistentEnum
     end
 
     def build_dummy_class(model, name_attr)
-      if model.const_defined?(:DummyModel, false)
-        dummy_class = model::DummyModel
-        if dummy_class.superclass == AbstractDummyModel && dummy_class.name_attr == name_attr
-          return dummy_class
-        else
-          model.send(:remove_const, :DummyModel)
-        end
-      end
+      dummy_model = dummy_class(model)
+      return dummy_model if dummy_model.present?
 
       dummy_model = AbstractDummyModel.for_name(name_attr)
       model.const_set(:DummyModel, dummy_model)
+      dummy_model
     end
   end
 
