@@ -71,6 +71,10 @@ module PersistentEnum
         initialize_acts_as_enum(current_state.required_members, current_state.name_attr)
       end
 
+      def dummy_class
+        PersistentEnum.dummy_class(self, name_attr)
+      end
+
       def [](index)
         @acts_as_enum_state.by_ordinal[index]
       end

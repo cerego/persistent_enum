@@ -143,7 +143,7 @@ module PersistentEnum
       end
     end
 
-    def dummy_class(model)
+    def dummy_class(model, name_attr)
       if model.const_defined?(:DummyModel, false)
         dummy_class = model::DummyModel
         unless dummy_class.superclass == AbstractDummyModel && dummy_class.name_attr == name_attr
@@ -231,7 +231,7 @@ module PersistentEnum
     end
 
     def build_dummy_class(model, name_attr)
-      dummy_model = dummy_class(model)
+      dummy_model = PersistentEnum.dummy_class(model, name_attr)
       return dummy_model if dummy_model.present?
 
       dummy_model = AbstractDummyModel.for_name(name_attr)
