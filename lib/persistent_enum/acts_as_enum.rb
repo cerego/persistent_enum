@@ -26,12 +26,21 @@ module PersistentEnum
     end
 
     module ClassMethods
+      def _acts_as_enum_state
+        nil
+      end
+
       def initialize_acts_as_enum(required_members, name_attr)
-        prev_state = instance_variable_defined?(:@acts_as_enum_state) ? @acts_as_enum_state : nil
+        prev_state = _acts_as_enum_state
 
         ActsAsEnum.register_acts_as_enum(self) if prev_state.nil?
 
-        @acts_as_enum_state = state = State.new(required_members, name_attr)
+        state = State.new(required_members, name_attr)
+
+        singleton_class.class_eval do
+          undef_method(:_acts_as_enum_state) if method_defined?(:_acts_as_enum_state)
+          define_method(:_acts_as_enum_state){ state }
+        end
 
         values = PersistentEnum.cache_constants(self, state.required_members, name_attr: state.name_attr)
         required_constants = values.map { |val| val.read_attribute(state.name_attr) }
@@ -66,7 +75,7 @@ module PersistentEnum
       end
 
       def reinitialize_acts_as_enum
-        current_state = @acts_as_enum_state
+        current_state = _acts_as_enum_state
         raise "Cannot refresh acts_as_enum type #{self.name}: not already initialized!" if current_state.nil?
         initialize_acts_as_enum(current_state.required_members, current_state.name_attr)
       end
@@ -76,11 +85,11 @@ module PersistentEnum
       end
 
       def [](index)
-        @acts_as_enum_state.by_ordinal[index]
+        _acts_as_enum_state.by_ordinal[index]
       end
 
       def value_of(name)
-        @acts_as_enum_state.by_name[name]
+        _acts_as_enum_state.by_name[name]
       end
 
       def value_of!(name)
@@ -93,30 +102,30 @@ module PersistentEnum
 
       # Currently active ordinals
       def ordinals
-        @acts_as_enum_state.required_by_ordinal.keys
+        _acts_as_enum_state.required_by_ordinal.keys
       end
 
       # Currently active enum members
       def values
-        @acts_as_enum_state.required_by_ordinal.values
+        _acts_as_enum_state.required_by_ordinal.values
       end
 
       def active?(member)
-        @acts_as_enum_state.required_by_ordinal.has_key?(member.ordinal)
+        _acts_as_enum_state.required_by_ordinal.has_key?(member.ordinal)
       end
 
       # All ordinals, including of inactive enum members
       def all_ordinals
-        @acts_as_enum_state.by_ordinal.keys
+        _acts_as_enum_state.by_ordinal.keys
       end
 
       # All enum members, including inactive
       def all_values
-        @acts_as_enum_state.by_ordinal.values
+        _acts_as_enum_state.by_ordinal.values
       end
 
       def name_attr
-        @acts_as_enum_state.name_attr
+        _acts_as_enum_state.name_attr
       end
     end
 
