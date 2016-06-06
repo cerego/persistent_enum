@@ -306,6 +306,16 @@ class PersistentEnumTest < ActiveSupport::TestCase
     destroy_test_model(:test_new_name)
   end
 
+  def test_load_in_transaction
+    assert_raises(RuntimeError) do
+      ActiveRecord::Base.transaction do
+        create_test_model(:test_create_in_transaction, ->(t){ t.string :name }) do
+          acts_as_enum([:A, :B])
+        end
+      end
+    end
+  end
+
   private
 
   def create_test_model(name, columns, create_table: true, &block)

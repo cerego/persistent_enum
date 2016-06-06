@@ -94,29 +94,33 @@ module PersistentEnum
       if model.table_exists?
         table_attributes = model.attribute_names - ["id", name_attr.to_s]
 
-        values = model.where(name_attr => required_members.keys).index_by { |m| m.read_attribute(name_attr) }
-
-        # Update or create
-        required_members.each do |name, attrs|
-          name = name.to_s
-          attr_names = attrs.keys.map(&:to_s)
-
-          if attr_names != table_attributes
-            raise ArgumentError.new("Enum member attribute mismatch: expected #{table_attributes.inspect}, received #{attr_names.inspect}")
-          end
-
-          current = values[name]
-
-          if current.present?
-            current.assign_attributes(attrs)
-            current.save! if current.changed?
-          else
-            values[name] = model.create(attrs.merge(name_attr => name))
-          end
+        if model.connection.open_transactions > 0
+          raise RuntimeError.new("PersistentEnum model #{model.name} detected unsafe class initialization during a transaction: aborting.")
         end
 
-        # discard index
-        values = values.values
+        values = model.transaction do
+          values_by_name = model.where(name_attr => required_members.keys).index_by { |m| m.read_attribute(name_attr) }
+
+          # Update or create
+          required_members.each do |name, attrs|
+            name = name.to_s
+            attr_names = attrs.keys.map(&:to_s)
+
+            if attr_names != table_attributes
+              raise ArgumentError.new("Enum member attribute mismatch: expected #{table_attributes.inspect}, received #{attr_names.inspect}")
+            end
+
+            current = values_by_name[name]
+
+            if current.present?
+              current.assign_attributes(attrs)
+              current.save! if current.changed?
+            else
+              values_by_name[name] = model.create(attrs.merge(name_attr => name))
+            end
+          end
+          values_by_name.values
+        end
       else
         puts "Database table for model #{model.name} doesn't exist, initializing constants with dummy records instead."
         dummyclass = build_dummy_class(model, name_attr)
