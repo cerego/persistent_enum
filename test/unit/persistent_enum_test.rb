@@ -50,6 +50,8 @@ class PersistentEnumTest < ActiveSupport::TestCase
         assert_equal(e.to_sym, c)
         assert_equal(e, table[e.ordinal])
         assert_equal(e, table.const_get(c.upcase))
+        assert(e.frozen?)
+        assert(e.enum_constant.frozen?)
       end
     end
   end

@@ -188,6 +188,7 @@ module PersistentEnum
         @ordinal       = id
         @enum_constant = name
         @attributes    = attributes.with_indifferent_access
+        freeze
       end
 
       def to_sym
@@ -224,6 +225,17 @@ module PersistentEnum
         else
           super
         end
+      end
+
+      def freeze
+        @ordinal.freeze
+        @enum_constant.freeze
+        @attributes.freeze
+        @attributes.each do |k, v|
+          k.freeze
+          v.freeze
+        end
+        super
       end
 
       def self.for_name(name_attr)

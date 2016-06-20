@@ -147,6 +147,11 @@ module PersistentEnum
       read_attribute(:id)
     end
 
+    def freeze
+      enum_constant.freeze
+      super
+    end
+
     # Is this enum member still present in the enum declaration?
     def active?
       self.class.active?(self)
