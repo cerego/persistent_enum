@@ -81,7 +81,7 @@ module PersistentEnum
     # enum members specified as either [name, ...] or {name: {attr: val, ...}, ...},
     # ensure that there is a row in the table corresponding to each name, and
     # cache the models as constants on the model class.
-    def cache_constants(model, required_members, name_attr: :name)
+    def cache_constants(model, required_members, name_attr: :name, required_attributes: nil)
       # normalize member specification
       unless required_members.is_a?(Hash)
         required_members = required_members.each_with_object({}) { |c, h| h[c] = {} }
@@ -92,7 +92,10 @@ module PersistentEnum
       # isn't present yet. If no database is present, create dummy values to
       # populate the constants.
       if model.table_exists?
-        table_attributes = model.attribute_names - ["id", name_attr.to_s]
+        table_attributes = (model.attribute_names - ["id", name_attr.to_s])
+        if required_attributes
+          table_attributes &= required_attributes.map(&:to_s)
+        end
 
         if model.connection.open_transactions > 0
           raise RuntimeError.new("PersistentEnum model #{model.name} detected unsafe class initialization during a transaction: aborting.")
