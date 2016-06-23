@@ -116,10 +116,20 @@ module PersistentEnum
             current = values_by_name[name]
 
             if current.present?
-              current.assign_attributes(attrs)
+              if ActiveRecord::VERSION::MAJOR == 3 # bypass mass assignment protection
+                current.assign_attributes(attrs, without_protection: true)
+              else
+                current.assign_attributes(attrs)
+              end
               current.save! if current.changed?
             else
-              values_by_name[name] = model.create!(attrs.merge(name_attr => name))
+              new_attrs = attrs.merge(name_attr => name)
+              if ActiveRecord::VERSION::MAJOR == 3
+                new_model = model.create!(new_attrs, without_protection: true)
+              else
+                new_model = model.create!(new_attrs)
+              end
+              values_by_name[name] = new_model
             end
           end
           values_by_name.values
