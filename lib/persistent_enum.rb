@@ -271,3 +271,5 @@ module PersistentEnum
 
   ActiveRecord::Base.send(:include, self)
 end
+
+require 'persistent_enum/railtie' if defined?(Rails)

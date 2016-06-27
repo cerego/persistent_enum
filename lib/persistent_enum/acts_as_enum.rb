@@ -158,18 +158,39 @@ module PersistentEnum
     end
 
     class << self
-      KNOWN_ACTS_AS_ENUM_TYPES = Set.new
+      KNOWN_ENUMERATIONS = {}
+      LOCK = Monitor.new
 
       def register_acts_as_enum(clazz)
-        KNOWN_ACTS_AS_ENUM_TYPES << clazz
+        LOCK.synchronize do
+          KNOWN_ENUMERATIONS[clazz.name] = clazz
+        end
       end
 
       # Reload enumerations from the database: useful if the database contents
       # may have changed (e.g. fixture loading).
       def reinitialize_enumerations
-        KNOWN_ACTS_AS_ENUM_TYPES.each(&:reinitialize_acts_as_enum)
+        LOCK.synchronize do
+          KNOWN_ENUMERATIONS.each do |name, clazz|
+            clazz.reinitialize_acts_as_enum
+          end
+        end
+      end
+
+      # Ensure that all KNOWN_ENUMERATIONS are loaded by resolving each name
+      # constant and reregistering the resulting class. Raises NameError if a
+      # previously-encountered type cannot be resolved.
+      def rerequire_known_enumerations
+        LOCK.synchronize do
+          KNOWN_ENUMERATIONS.to_a.each do |name, old_clazz|
+            new_clazz = name.safe_constantize
+            unless new_clazz.is_a?(Class)
+              raise NameError.new("Could not resolve ActsAsEnum type '#{name}' after reload")
+            end
+            register_acts_as_enum(new_clazz)
+          end
+        end
       end
     end
-
   end
 end
