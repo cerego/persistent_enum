@@ -227,7 +227,7 @@ class PersistentEnumTest < ActiveSupport::TestCase
       acts_as_enum([]) do
         One(count: 1)
         Two(count: 2)
-        Three(count: 3)
+        constant!(:Three, count: 3)
       end
     end
 

@@ -71,8 +71,12 @@ module PersistentEnum
       @constants
     end
 
-    def method_missing(name, **args)
+    def constant!(name, **args)
       @constants[name] = args
+    end
+
+    def method_missing(name, **args)
+      constant!(name, **args)
     end
   end
 
