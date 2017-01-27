@@ -183,7 +183,13 @@ module PersistentEnum
     def cache_values(model, values, name_attr)
       values.each do |value|
         constant_name = constant_name(value.read_attribute(name_attr))
-        unless model.const_defined?(constant_name, false) && model.const_get(constant_name, false) == value
+
+        if model.const_defined?(constant_name, false)
+          if model.const_get(constant_name, false) != value
+            model.send(:remove_const, constant_name)
+            model.const_set(constant_name, value)
+          end
+        else
           model.const_set(constant_name, value)
         end
       end
