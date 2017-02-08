@@ -11,14 +11,6 @@ class PersistentEnumTest < ActiveSupport::TestCase
   CONSTANTS = [:One, :Two, :Three, :Four]
 
   def setup
-    # Horrible horrible hack: temporary tables don't show up in SHOW TABLES
-    # LIKE, which the mysql driver uses for table_exists?. Non-temporary tables
-    # break the test runner's transactions. This test requires table_exists? to
-    # function. So override table_exists? to first check a list of temporary
-    # tables.
-    @temporary_tables = tt = Set.new
-    ActiveRecord::Base.connection.define_singleton_method(:table_exists?){ |name| tt.include?(name) || super(name) }
-
     create_test_model(:test_persistent_enum, ->(t){ t.string :name }) do
       acts_as_enum(CONSTANTS)
     end
@@ -36,9 +28,6 @@ class PersistentEnumTest < ActiveSupport::TestCase
     destroy_test_model(:test_persistent_enum)
     destroy_test_model(:test_belongs_to_enum)
     destroy_test_model(:test_persistent_enum_without_table)
-
-    ActiveRecord::Base.connection.singleton_class.send(:remove_method, :table_exists?)
-    @temporary_tables = nil
   end
 
   def test_enum_lookup
@@ -323,8 +312,7 @@ class PersistentEnumTest < ActiveSupport::TestCase
   def create_test_model(name, columns, create_table: true, &block)
     if create_table
       table_name = name.to_s.pluralize
-      ActiveRecord::Base.connection.create_table(table_name, :temporary => true, &columns)
-      @temporary_tables << table_name
+      ActiveRecord::Base.connection.create_table(table_name, :temporary => false, &columns)
     end
 
     model_name = name.to_s.classify
@@ -342,7 +330,6 @@ class PersistentEnumTest < ActiveSupport::TestCase
       table_name = clazz.table_name
       if clazz.table_exists?
         clazz.connection.drop_table(table_name)
-        @temporary_tables.delete(table_name)
       end
       Object.send(:remove_const, model_name)
     end
