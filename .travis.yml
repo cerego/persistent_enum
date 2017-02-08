@@ -1,0 +1,7 @@
+dist: trusty
+language: ruby
+rvm:
+  - 2.3
+
+notifications:
+  email: false
