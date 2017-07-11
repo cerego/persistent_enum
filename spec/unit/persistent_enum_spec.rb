@@ -1,6 +1,8 @@
 require 'persistent_enum'
 require 'byebug'
 
+require_relative '../spec_helper'
+
 RSpec.describe PersistentEnum, :database do
   CONSTANTS = [:One, :Two, :Three, :Four]
 
