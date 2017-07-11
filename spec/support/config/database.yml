@@ -1,0 +1,4 @@
+---
+test:
+  adapter: postgresql
+  database: persistent_enum_test
