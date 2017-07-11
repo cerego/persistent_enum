@@ -43,9 +43,15 @@ RSpec.describe PersistentEnum, :database do
       let(:foreign_key) { foreign_name + "_id" }
 
       let(:other_model) do
-        fn = foreign_name
-        create_test_model(:referrer, ->(t){ t.integer foreign_key }) do
-          belongs_to_enum fn
+        foreign_name = foreign_name()
+        foreign_key_type = model.columns.detect { |x| x.name == "id" }.sql_type
+
+        create_table = ->(t){
+          t.references foreign_name, type: foreign_key_type, foreign_key: true
+        }
+
+        create_test_model(:referrer, create_table) do
+          belongs_to_enum foreign_name
         end
       end
 
@@ -355,6 +361,45 @@ RSpec.describe PersistentEnum, :database do
         end
       }.to raise_error(ArgumentError)
       destroy_test_model(:test_invalid_args_c)
+    end
+  end
+
+  context "using a postgresql enum valued id" do
+    let(:name) { "with_enum_id" }
+    let(:enum_type) { "#{name}_type" }
+
+    context "with table" do
+      before(:each) do
+        ActiveRecord::Base.connection.execute("CREATE TYPE #{enum_type} AS ENUM ()")
+        ActiveRecord::Base.connection.create_table(name.pluralize, id: false) do |t|
+          t.column :id, enum_type, primary_key: true, null: false
+          t.string :name
+        end
+      end
+
+      after(:each) do
+        ActiveRecord::Base.connection.execute("DROP TYPE #{enum_type} CASCADE")
+      end
+
+      let!(:model) do
+        enum_type = enum_type()
+        create_test_model(:with_enum_id, nil, create_table: false) do
+          acts_as_enum(CONSTANTS, sql_enum_type: enum_type)
+        end
+      end
+
+      it_behaves_like "acts like a persisted enum"
+    end
+
+    context "without table" do
+      let!(:model) do
+        enum_type = enum_type()
+        create_test_model(:no_table_enum_id, nil, create_table: false) do
+          acts_as_enum(CONSTANTS, sql_enum_type: enum_type)
+        end
+      end
+
+      it_behaves_like "acts like an enum"
     end
   end
 

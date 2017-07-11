@@ -40,7 +40,7 @@ module DatabaseHelper
     if !clazz.nil?
       table_name = clazz.table_name
       if clazz.table_exists?
-        clazz.connection.drop_table(table_name)
+        clazz.connection.drop_table(table_name, force: :cascade)
       end
       Object.send(:remove_const, model_name)
       ActiveSupport::Dependencies::Reference.clear!
