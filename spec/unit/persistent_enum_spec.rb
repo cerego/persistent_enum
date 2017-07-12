@@ -84,6 +84,22 @@ RSpec.describe PersistentEnum, :database do
 
         end
       end
+
+      it "can be created with null foreign key" do
+        t = other_model.new
+        expect(t).to be_valid
+      end
+
+      it "can not be created with invalid foreign key" do
+        t = other_model.new(foreign_key => -1)
+        expect(t).not_to be_valid
+      end
+
+      it "can not be created with invalid foreign constant" do
+        expect {
+          other_model.new(foreign_name => :BadConstant)
+        }.to raise_error(NameError)
+      end
     end
   end
 
