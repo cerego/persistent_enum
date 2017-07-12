@@ -121,7 +121,7 @@ RSpec.describe PersistentEnum, :database do
         .to raise_error(ActiveRecord::ReadOnlyRecord)
 
       expect { model::ONE.name = "foo" }
-        .to raise_error(RuntimeError) # Frozen object
+        .to raise_error(RuntimeError, /can't modify frozen/) # Frozen object
 
       expect { model.first.update_attribute(:name, "foo") }
         .to raise_error(ActiveRecord::ReadOnlyRecord)
@@ -437,6 +437,6 @@ RSpec.describe PersistentEnum, :database do
           acts_as_enum([:A, :B])
         end
       end
-    }.to raise_error(RuntimeError)
+    }.to raise_error(RuntimeError, /unsafe class initialization during/)
   end
 end
