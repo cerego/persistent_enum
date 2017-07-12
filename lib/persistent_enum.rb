@@ -113,7 +113,12 @@ module PersistentEnum
         end
 
         if sql_enum_type
-          ensure_sql_enum_members(model.connection, required_members.keys, sql_enum_type)
+          begin
+            ensure_sql_enum_members(model.connection, required_members.keys, sql_enum_type)
+          rescue MissingEnumTypeError
+            puts "Database enum type missing for #{model.name}: falling back to default id handling"
+            sql_enum_type = nil
+          end
         end
 
         values = model.transaction do
@@ -194,23 +199,33 @@ module PersistentEnum
     private
 
     ENUM_TYPE_LOCK_KEY = 0x757a6cafedc6084d # Random 64-bit key
+    class MissingEnumTypeError < RuntimeError; end
     def ensure_sql_enum_members(connection, names, sql_enum_type)
       names = names.map(&:to_s)
 
+      # It may be the case that an enum type doesn't yet exist despite the table
+      # existing, for example if the table is presently being migrated to an
+      # enum type. If this is the case, warn and fall back to standard id handling.
+      type_exists = ActiveRecord::Base.connection.select_value(
+        "SELECT true FROM pg_type WHERE typname = #{connection.quote(sql_enum_type)}")
+      raise MissingEnumTypeError.new unless type_exists
+
       # ALTER TYPE may not be performed within a transaction: obtain a
       # session-level advisory lock to prevent racing.
-      connection.execute("SELECT pg_advisory_lock(#{ENUM_TYPE_LOCK_KEY})")
+      begin
+        connection.execute("SELECT pg_advisory_lock(#{ENUM_TYPE_LOCK_KEY})")
 
-      quoted_type = connection.quote_table_name(sql_enum_type)
-      current_members = connection.select_values(<<-SQL)
+        quoted_type = connection.quote_table_name(sql_enum_type)
+        current_members = connection.select_values(<<-SQL)
         SELECT unnest(enum_range(null::#{quoted_type}, null::#{quoted_type}));
       SQL
 
-      (names - current_members).each do |name|
-        connection.execute("ALTER TYPE #{quoted_type} ADD VALUE #{connection.quote(name)}")
+        (names - current_members).each do |name|
+          connection.execute("ALTER TYPE #{quoted_type} ADD VALUE #{connection.quote(name)}")
+        end
+      ensure
+        connection.execute("SELECT pg_advisory_unlock(#{ENUM_TYPE_LOCK_KEY})")
       end
-    ensure
-      connection.execute("SELECT pg_advisory_unlock(#{ENUM_TYPE_LOCK_KEY})")
     end
 
     # Set each value as a constant on this class. If reloading, only update if
