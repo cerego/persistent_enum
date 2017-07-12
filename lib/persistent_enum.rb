@@ -13,7 +13,7 @@ module PersistentEnum
   extend ActiveSupport::Concern
 
   module ClassMethods
-    def acts_as_enum(required_constants, name_attr: :name, &constant_init_block)
+    def acts_as_enum(required_constants, name_attr: :name, sql_enum_type: nil, &constant_init_block)
       include ActsAsEnum
 
       if block_given?
@@ -27,7 +27,7 @@ module PersistentEnum
         raise ArgumentError.new("No enum constants specified")
       end
 
-      initialize_acts_as_enum(required_constants, name_attr)
+      initialize_acts_as_enum(required_constants, name_attr, sql_enum_type)
     end
 
     # Sets up a association with an enumeration record type. Key resolution is
@@ -85,7 +85,14 @@ module PersistentEnum
     # enum members specified as either [name, ...] or {name: {attr: val, ...}, ...},
     # ensure that there is a row in the table corresponding to each name, and
     # cache the models as constants on the model class.
-    def cache_constants(model, required_members, name_attr: :name, required_attributes: nil)
+    #
+    # When using a database such as postgresql that supports native enumerated
+    # types, can additionally specify a native enum type to use as the primary
+    # key. In this case, the required members will be added to the native type
+    # by name using `ALTER TYPE` before insertion. This ensures that enum table
+    # ids will have predictable values and can therefore be used in database
+    # level constraints.
+    def cache_constants(model, required_members, name_attr: :name, required_attributes: nil, sql_enum_type: nil)
       # normalize member specification
       unless required_members.is_a?(Hash)
         required_members = required_members.each_with_object({}) { |c, h| h[c] = {} }
@@ -103,6 +110,15 @@ module PersistentEnum
 
         if model.connection.open_transactions > 0
           raise RuntimeError.new("PersistentEnum model #{model.name} detected unsafe class initialization during a transaction: aborting.")
+        end
+
+        if sql_enum_type
+          begin
+            ensure_sql_enum_members(model.connection, required_members.keys, sql_enum_type)
+          rescue MissingEnumTypeError
+            puts "Database enum type missing for #{model.name}: falling back to default id handling"
+            sql_enum_type = nil
+          end
         end
 
         values = model.transaction do
@@ -128,6 +144,8 @@ module PersistentEnum
               current.save! if current.changed?
             else
               new_attrs = attrs.merge(name_attr => name)
+              new_attrs[:id] = name if sql_enum_type
+
               if ActiveRecord::VERSION::MAJOR == 3
                 new_model = model.create!(new_attrs, without_protection: true)
               else
@@ -144,7 +162,9 @@ module PersistentEnum
 
         next_id = 999999999
         values = required_members.map do |member_name, attrs|
-          dummyclass.new(next_id += 1, member_name.to_s, attrs)
+          name = member_name.to_s
+          id   = sql_enum_type ? name : (next_id += 1)
+          dummyclass.new(id, name, attrs)
         end
       end
 
@@ -177,6 +197,36 @@ module PersistentEnum
     end
 
     private
+
+    ENUM_TYPE_LOCK_KEY = 0x757a6cafedc6084d # Random 64-bit key
+    class MissingEnumTypeError < RuntimeError; end
+    def ensure_sql_enum_members(connection, names, sql_enum_type)
+      names = names.map(&:to_s)
+
+      # It may be the case that an enum type doesn't yet exist despite the table
+      # existing, for example if the table is presently being migrated to an
+      # enum type. If this is the case, warn and fall back to standard id handling.
+      type_exists = ActiveRecord::Base.connection.select_value(
+        "SELECT true FROM pg_type WHERE typname = #{connection.quote(sql_enum_type)}")
+      raise MissingEnumTypeError.new unless type_exists
+
+      # ALTER TYPE may not be performed within a transaction: obtain a
+      # session-level advisory lock to prevent racing.
+      begin
+        connection.execute("SELECT pg_advisory_lock(#{ENUM_TYPE_LOCK_KEY})")
+
+        quoted_type = connection.quote_table_name(sql_enum_type)
+        current_members = connection.select_values(<<-SQL)
+        SELECT unnest(enum_range(null::#{quoted_type}, null::#{quoted_type}));
+      SQL
+
+        (names - current_members).each do |name|
+          connection.execute("ALTER TYPE #{quoted_type} ADD VALUE #{connection.quote(name)}")
+        end
+      ensure
+        connection.execute("SELECT pg_advisory_unlock(#{ENUM_TYPE_LOCK_KEY})")
+      end
+    end
 
     # Set each value as a constant on this class. If reloading, only update if
     # it's changed.

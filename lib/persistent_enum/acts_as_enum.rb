@@ -6,11 +6,12 @@ module PersistentEnum
     extend ActiveSupport::Concern
 
     class State
-      attr_accessor :required_members, :name_attr, :by_name, :by_ordinal, :required_by_ordinal
+      attr_accessor :required_members, :name_attr, :sql_enum_type, :by_name, :by_ordinal, :required_by_ordinal
 
-      def initialize(required_members, name_attr)
+      def initialize(required_members, name_attr, sql_enum_type)
         self.required_members    = required_members.freeze
         self.name_attr           = name_attr
+        self.sql_enum_type       = sql_enum_type
         self.by_name             = {}.with_indifferent_access
         self.by_ordinal          = {}
         self.required_by_ordinal = {}
@@ -30,19 +31,19 @@ module PersistentEnum
         nil
       end
 
-      def initialize_acts_as_enum(required_members, name_attr)
+      def initialize_acts_as_enum(required_members, name_attr, sql_enum_type)
         prev_state = _acts_as_enum_state
 
         ActsAsEnum.register_acts_as_enum(self) if prev_state.nil?
 
-        state = State.new(required_members, name_attr)
+        state = State.new(required_members, name_attr, sql_enum_type)
 
         singleton_class.class_eval do
           undef_method(:_acts_as_enum_state) if method_defined?(:_acts_as_enum_state)
           define_method(:_acts_as_enum_state){ state }
         end
 
-        values = PersistentEnum.cache_constants(self, state.required_members, name_attr: state.name_attr)
+        values = PersistentEnum.cache_constants(self, state.required_members, name_attr: state.name_attr, sql_enum_type: state.sql_enum_type)
         required_constants = values.map { |val| val.read_attribute(state.name_attr) }
 
         # Now we've ensured that our required constants are present, load the rest
@@ -77,7 +78,7 @@ module PersistentEnum
       def reinitialize_acts_as_enum
         current_state = _acts_as_enum_state
         raise "Cannot refresh acts_as_enum type #{self.name}: not already initialized!" if current_state.nil?
-        initialize_acts_as_enum(current_state.required_members, current_state.name_attr)
+        initialize_acts_as_enum(current_state.required_members, current_state.name_attr, current_state.sql_enum_type)
       end
 
       def dummy_class
