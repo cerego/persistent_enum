@@ -26,7 +26,7 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "rspec"
 
   spec.add_development_dependency "appraisal"
-  spec.add_development_dependency "pg"
+  spec.add_development_dependency "pg", "~> 0.18" # As of 5.1.4, Rails runtime check excludes pg 1.x, see #31669
 
   spec.add_development_dependency "byebug"
 end
