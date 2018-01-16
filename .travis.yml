@@ -9,6 +9,10 @@ gemfile:
   - gemfiles/rails_5_1.gemfile
 services:
   - postgresql
+before_install:
+  # Travis' Ruby 2.5.0 ships broken rubygems, won't run rake.
+  # Workaround: update rubygems. See travis-ci issue 8978
+  - gem update --system
 before_script:
   - psql -c 'CREATE DATABASE persistent_enum_test;' -U postgres
 addons:
