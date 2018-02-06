@@ -92,20 +92,33 @@ module PersistentEnum
     # by name using `ALTER TYPE` before insertion. This ensures that enum table
     # ids will have predictable values and can therefore be used in database
     # level constraints.
-    def cache_constants(model, required_members, name_attr: :name, required_attributes: nil, sql_enum_type: nil)
+    def cache_constants(model, required_members, name_attr: "name", required_attributes: nil, sql_enum_type: nil)
       # normalize member specification
       unless required_members.is_a?(Hash)
         required_members = required_members.each_with_object({}) { |c, h| h[c] = {} }
       end
+
+      # Normalize symbols
+      name_attr = name_attr.to_s
+      required_members = required_members.each_with_object({}) do |(name, attrs), h|
+        h[name.to_s] = attrs.transform_keys(&:to_s)
+      end
+      required_attributes = required_attributes.map(&:to_s) if required_attributes
 
       # We need to cope with (a) loading this class and (b) ensuring that all the
       # constants are defined (if not functional) in the case that the database
       # isn't present yet. If no database is present, create dummy values to
       # populate the constants.
       if model.table_exists?
-        table_attributes = (model.attribute_names - ["id", name_attr.to_s])
-        if required_attributes
-          table_attributes &= required_attributes.map(&:to_s)
+        internal_attributes = ["id", name_attr]
+        table_attributes = (model.attribute_names - internal_attributes)
+
+        # If not otherwise specified, only attributes without defaults are required
+        required_attributes ||= model.column_defaults.map { |attr, default| attr if default.nil? }.compact - internal_attributes
+
+        unless (unknown_attributes = (required_attributes - table_attributes)).blank?
+          log_warning("Enum error: required attributes #{unknown_attrs.inspect} missing from table. Dropping.")
+          required_attributes -= unknown_attributes
         end
 
         if model.connection.open_transactions > 0
@@ -126,11 +139,14 @@ module PersistentEnum
 
           # Update or create
           required_members.each do |name, attrs|
-            name = name.to_s
-            attr_names = attrs.keys.map(&:to_s)
+            attr_names = attrs.keys
 
-            if attr_names != table_attributes
-              raise ArgumentError.new("Enum member attribute mismatch: expected #{table_attributes.inspect}, received #{attr_names.inspect}")
+            if (extra_attrs = (attr_names - table_attributes)).present?
+              log_warning("Enum class error: specified attributes #{extra_attrs.inspect} missing from table. Dropping.")
+              attrs = attrs.except(*extra_attrs)
+            end
+            if (missing_attrs = (required_attributes - attr_names)).present?
+              raise ArgumentError.new("Enum member error: required attributes #{missing_attrs.inspect} not provided")
             end
 
             current = values_by_name[name]
@@ -144,7 +160,7 @@ module PersistentEnum
               current.save! if current.changed?
             else
               new_attrs = attrs.merge(name_attr => name)
-              new_attrs[:id] = name if sql_enum_type
+              new_attrs["id"] = name if sql_enum_type
 
               if ActiveRecord::VERSION::MAJOR == 3
                 new_model = model.create!(new_attrs, without_protection: true)
@@ -157,14 +173,13 @@ module PersistentEnum
           values_by_name.values
         end
       else
-        puts "Database table for model #{model.name} doesn't exist, initializing constants with dummy records instead."
+        log_warning("Database table for model #{model.name} doesn't exist, initializing constants with dummy records instead.")
         dummyclass = build_dummy_class(model, name_attr)
 
         next_id = 999999999
         values = required_members.map do |member_name, attrs|
-          name = member_name.to_s
-          id   = sql_enum_type ? name : (next_id += 1)
-          dummyclass.new(id, name, attrs)
+          id   = sql_enum_type ? member_name : (next_id += 1)
+          dummyclass.new(id, member_name, attrs)
         end
       end
 
@@ -201,8 +216,6 @@ module PersistentEnum
     ENUM_TYPE_LOCK_KEY = 0x757a6cafedc6084d # Random 64-bit key
     class MissingEnumTypeError < RuntimeError; end
     def ensure_sql_enum_members(connection, names, sql_enum_type)
-      names = names.map(&:to_s)
-
       # It may be the case that an enum type doesn't yet exist despite the table
       # existing, for example if the table is presently being migrated to an
       # enum type. If this is the case, warn and fall back to standard id handling.
@@ -252,6 +265,14 @@ module PersistentEnum
       value.gsub!(/_{2,}/, '_')
       value.upcase!
       value
+    end
+
+    def log_warning(message)
+      if (logger = ActiveRecord::Base.logger)
+        logger.warn(message)
+      else
+        STDERR.puts(message)
+      end
     end
 
     class AbstractDummyModel

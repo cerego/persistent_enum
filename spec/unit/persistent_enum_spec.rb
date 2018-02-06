@@ -1,17 +1,28 @@
+# frozen_string_literal: true
+
+# rubocop:disable Performance/HashEachMethods, Style/Semicolon, Lint/MissingCopEnableDirective
+
 require 'persistent_enum'
 require 'byebug'
 
 require_relative '../spec_helper'
 
 RSpec.describe PersistentEnum, :database do
-  CONSTANTS = [:One, :Two, :Three, :Four]
+  CONSTANTS = [:One, :Two, :Three, :Four].freeze
 
   before(:context) do
     initialize_database
   end
 
+  let(:logger) { spy("logger") }
+
+  before(:each) do
+    ActiveRecord::Base.logger = logger
+  end
+
   after(:each) do
     destroy_test_models
+    ActiveRecord::Base.logger = logger
   end
 
   shared_examples "acts like an enum" do
@@ -48,7 +59,7 @@ RSpec.describe PersistentEnum, :database do
         foreign_name = foreign_name()
         foreign_key_type = model.columns.detect { |x| x.name == "id" }.sql_type
 
-        create_table = ->(t){
+        create_table = ->(t) {
           t.references foreign_name, type: foreign_key_type, foreign_key: true
         }
 
@@ -81,7 +92,6 @@ RSpec.describe PersistentEnum, :database do
           expect(t).to be_valid
                    .and have_attributes(foreign_name => v,
                                         foreign_key  => v.ordinal)
-
         end
       end
 
@@ -105,7 +115,7 @@ RSpec.describe PersistentEnum, :database do
 
   context "with an enum model" do
     let(:model) do
-      create_test_model(:with_table, ->(t){ t.string :name }) do
+      create_test_model(:with_table, ->(t) { t.string :name }) do
         acts_as_enum(CONSTANTS)
       end
     end
@@ -138,6 +148,11 @@ RSpec.describe PersistentEnum, :database do
       end
     end
 
+    it "warns that the table is not present" do
+      expect(model).to be_present
+      expect(logger).to have_received(:warn).with(a_string_matching(/Database table for model.*doesn't exist/))
+    end
+
     it_behaves_like "acts like an enum"
 
     it "initializes dummy values correctly" do
@@ -165,7 +180,7 @@ RSpec.describe PersistentEnum, :database do
     let(:existing_constant) { :Hello }
 
     let!(:model) do
-      model = create_test_model(:with_existing, ->(t){ t.string :name })
+      model = create_test_model(:with_existing, ->(t) { t.string :name })
       @initial_value  = model.create(id: initial_ordinal, name: initial_constant.to_s)
       @existing_value = model.create(id: existing_ordinal, name: existing_constant.to_s)
       model.acts_as_enum(CONSTANTS)
@@ -174,8 +189,8 @@ RSpec.describe PersistentEnum, :database do
 
     it_behaves_like "acts like a persisted enum"
 
-    let(:expected_all) { (CONSTANTS + [existing_constant])}
-    let(:expected_required) { CONSTANTS}
+    let(:expected_all) { (CONSTANTS + [existing_constant]) }
+    let(:expected_required) { CONSTANTS }
 
     it "caches required values" do
       expect(model.values.map(&:to_sym)).to contain_exactly(*expected_required)
@@ -223,7 +238,7 @@ RSpec.describe PersistentEnum, :database do
 
   context "with cached constants" do
     let(:model) do
-      create_test_model(:with_constants, ->(t){ t.string :name }) do
+      create_test_model(:with_constants, ->(t) { t.string :name }) do
         PersistentEnum.cache_constants(self, CONSTANTS)
       end
     end
@@ -252,7 +267,7 @@ RSpec.describe PersistentEnum, :database do
 
     let(:model) do
       test_constants = test_constants()
-      create_test_model(:with_complex_names, ->(t){ t.string :name }) do
+      create_test_model(:with_complex_names, ->(t) { t.string :name }) do
         PersistentEnum.cache_constants(self, test_constants.keys)
       end
     end
@@ -307,7 +322,7 @@ RSpec.describe PersistentEnum, :database do
     context "providing a hash" do
       let(:model) do
         members = members()
-        create_test_model(:with_extra_field, ->(t){ t.string :name; t.integer :count }) do
+        create_test_model(:with_extra_field, ->(t) { t.string :name; t.integer :count }) do
           # pre-existing matching, non-matching, and outdated data
           create(name: "One", count: 3)
           create(name: "Two", count: 2)
@@ -332,7 +347,7 @@ RSpec.describe PersistentEnum, :database do
 
     context "using builder interface" do
       let(:model) do
-        create_test_model(:with_extra_field_using_builder, ->(t){ t.string :name; t.integer :count }) do
+        create_test_model(:with_extra_field_using_builder, ->(t) { t.string :name; t.integer :count }) do
           acts_as_enum([]) do
             One(count: 1)
             Two(count: 2)
@@ -358,27 +373,42 @@ RSpec.describe PersistentEnum, :database do
       it_behaves_like "acts like an enum with extra fields"
     end
 
-    it "must have attributes that match the table" do
+    it "requires all required attributes to be provided" do
       expect {
-        create_test_model(:test_invalid_args_a, ->(t){ t.string :name; t.integer :count }) do
-          acts_as_enum([:One])
+        create_test_model(:test_invalid_args_a, ->(t) { t.string :name; t.integer :count }) do
+          acts_as_enum([:Bad])
         end
       }.to raise_error(ArgumentError)
       destroy_test_model(:test_invalid_args_a)
+    end
 
-      expect {
-        create_test_model(:test_invalid_args_b, ->(t){ t.string :name; t.integer :count }) do
-          acts_as_enum({ :One => { incorrect: 1 } })
+    context "with attributes with defaults" do
+      let(:model) do
+        create_test_model(:test_invalid_args_b, ->(t) { t.string :name; t.integer :count, default: 1 }) do
+          acts_as_enum([]) do
+            One()
+            Two(count: 2)
+          end
         end
-      }.to raise_error(ArgumentError)
-      destroy_test_model(:test_invalid_args_b)
+      end
 
-      expect {
-        create_test_model(:test_invalid_args_c, ->(t){ t.string :name }) do
-          acts_as_enum({ :One => { incorrect: 1 } })
-        end
-      }.to raise_error(ArgumentError)
-      destroy_test_model(:test_invalid_args_c)
+      it "allows defaults to be omitted" do
+        o = model.value_of("One")
+        expect(o).to be_present
+        expect(o.count).to eq(1)
+
+        t = model.value_of("Two")
+        expect(t).to be_present
+        expect(t.count).to eq(2)
+      end
+    end
+
+    it "warns if nonexistent attributes are provided" do
+      create_test_model(:test_invalid_args_c, ->(t) { t.string :name }) do
+        acts_as_enum({ :One => { incorrect: 1 } })
+      end
+
+      expect(logger).to have_received(:warn).with(a_string_matching(/missing from table/))
     end
   end
 
@@ -423,7 +453,7 @@ RSpec.describe PersistentEnum, :database do
 
   context "with the name of the enum value column changed" do
     let(:model) do
-      create_test_model(:test_new_name, ->(t){ t.string :namey }) do
+      create_test_model(:test_new_name, ->(t) { t.string :namey }) do
         acts_as_enum(CONSTANTS, name_attr: :namey)
       end
     end
@@ -433,7 +463,7 @@ RSpec.describe PersistentEnum, :database do
   it "refuses to create a table in a transaction" do
     expect {
       ActiveRecord::Base.transaction do
-        create_test_model(:test_create_in_transaction, ->(t){ t.string :name }) do
+        create_test_model(:test_create_in_transaction, ->(t) { t.string :name }) do
           acts_as_enum([:A, :B])
         end
       end
