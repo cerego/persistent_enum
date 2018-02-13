@@ -469,4 +469,25 @@ RSpec.describe PersistentEnum, :database do
       end
     }.to raise_error(RuntimeError, /unsafe class initialization during/)
   end
+
+  context "with an empty constants array" do
+    let(:initial_ordinal) { 9998 }
+    let(:initial_constant) { CONSTANTS.first }
+
+    let(:model) do
+      model = create_test_model(:with_empty_constants, ->(t) { t.string :name })
+      @prior_value = model.create!(id: initial_ordinal, name: initial_constant.to_s)
+      model.acts_as_enum([])
+      model
+    end
+
+    it "looks up the existing value" do
+      expect(model.value_of(initial_constant)).to eq(@prior_value)
+      expect(model[initial_ordinal]).to eq(@prior_value)
+    end
+
+    it "caches the existing value" do
+      expect(model.all_values).to eq([@prior_value])
+    end
+  end
 end

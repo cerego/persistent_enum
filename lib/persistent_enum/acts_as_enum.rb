@@ -49,7 +49,7 @@ module PersistentEnum
         # Now we've ensured that our required constants are present, load the rest
         # of the enum from the database (if present)
         if table_exists?
-          values.concat(unscoped { where("id NOT IN (?)", values) })
+          values.concat(unscoped { where.not(id: values) })
         end
 
         values.each do |value|
