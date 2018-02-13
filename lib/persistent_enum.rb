@@ -21,10 +21,10 @@ module PersistentEnum
           raise ArgumentError.new("Constants may not be provided both by argument and builder block")
         end
         required_constants = ConstantEvaluator.new.evaluate(&constant_init_block)
-      end
 
-      unless required_constants.present?
-        raise ArgumentError.new("No enum constants specified")
+        unless required_constants.present?
+          raise ArgumentError.new("No enum constants specified")
+        end
       end
 
       initialize_acts_as_enum(required_constants, name_attr, sql_enum_type)
