@@ -305,17 +305,17 @@ module PersistentEnum
       alias_method :[], :read_attribute
 
       def method_missing(m, *args)
-        m = m.to_s
+        method_name = m.to_s
         case
-        when m == "id"
+        when method_name == "id"
           ordinal
-        when m == self.class.name_attr.to_s
+        when method_name == self.class.name_attr.to_s
           enum_constant
-        when @attributes.has_key?(m)
+        when @attributes.has_key?(method_name)
           if args.size > 0
             raise ArgumentError.new("wrong number of arguments (#{args.size} for 0)")
           end
-          @attributes[m]
+          @attributes[method_name]
         else
           super
         end
