@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require "active_support"
 require "active_record"
 
@@ -6,13 +8,14 @@ module PersistentEnum
     extend ActiveSupport::Concern
 
     class State
-      attr_accessor :required_members, :name_attr, :sql_enum_type, :by_name, :by_ordinal, :required_by_ordinal
+      attr_accessor :required_members, :name_attr, :sql_enum_type, :by_name, :by_name_insensitive, :by_ordinal, :required_by_ordinal
 
       def initialize(required_members, name_attr, sql_enum_type)
         self.required_members    = required_members.freeze
         self.name_attr           = name_attr
         self.sql_enum_type       = sql_enum_type
         self.by_name             = {}.with_indifferent_access
+        self.by_name_insensitive = {}.with_indifferent_access
         self.by_ordinal          = {}
         self.required_by_ordinal = {}
       end
@@ -20,9 +23,14 @@ module PersistentEnum
       def freeze
         by_name.values.each(&:freeze)
         by_name.freeze
+        by_name_insensitive.freeze
         by_ordinal.freeze
         required_by_ordinal.freeze
         super
+      end
+
+      def insensitive_lookup?
+        by_name.size == by_name_insensitive.size
       end
     end
 
@@ -40,7 +48,7 @@ module PersistentEnum
 
         singleton_class.class_eval do
           undef_method(:_acts_as_enum_state) if method_defined?(:_acts_as_enum_state)
-          define_method(:_acts_as_enum_state){ state }
+          define_method(:_acts_as_enum_state) { state }
         end
 
         values = PersistentEnum.cache_constants(self, state.required_members, name_attr: state.name_attr, sql_enum_type: state.sql_enum_type)
@@ -63,8 +71,9 @@ module PersistentEnum
             value = prev_value if prev_value == value
           end
 
-          state.by_name[name]       = value
           state.by_ordinal[ordinal] = value
+          state.by_name[name]       = value
+          state.by_name_insensitive[name.downcase] = value
         end
 
         # Collect up the required values for #values and #ordinals
@@ -89,17 +98,24 @@ module PersistentEnum
         _acts_as_enum_state.by_ordinal[index]
       end
 
-      def value_of(name)
-        _acts_as_enum_state.by_name[name]
+      def value_of(name, insensitive: false)
+        if insensitive
+          unless _acts_as_enum_state.insensitive_lookup?
+            raise RuntimeError.new("#{self.name} constants are case-dependent: cannot perform case-insensitive lookup")
+          end
+          _acts_as_enum_state.by_name_insensitive[name.downcase]
+        else
+          _acts_as_enum_state.by_name[name]
+        end
       end
 
-      def value_of!(name)
-        v = value_of(name)
-        raise NameError.new("#{self.to_s}: Invalid member '#{name}'") unless v.present?
+      def value_of!(name, insensitive: false)
+        v = value_of(name, insensitive: insensitive)
+        raise NameError.new("#{self}: Invalid member '#{name}'") unless v.present?
         v
       end
 
-      alias_method :with_name, :value_of
+      alias with_name value_of
 
       # Currently active ordinals
       def ordinals
@@ -172,7 +188,7 @@ module PersistentEnum
       # may have changed (e.g. fixture loading).
       def reinitialize_enumerations
         LOCK.synchronize do
-          KNOWN_ENUMERATIONS.each do |name, clazz|
+          KNOWN_ENUMERATIONS.each_value do |clazz|
             clazz.reinitialize_acts_as_enum
           end
         end
@@ -183,7 +199,7 @@ module PersistentEnum
       # previously-encountered type cannot be resolved.
       def rerequire_known_enumerations
         LOCK.synchronize do
-          KNOWN_ENUMERATIONS.to_a.each do |name, old_clazz|
+          KNOWN_ENUMERATIONS.keys.each do |name|
             new_clazz = name.safe_constantize
             unless new_clazz.is_a?(Class)
               raise NameError.new("Could not resolve ActsAsEnum type '#{name}' after reload")
