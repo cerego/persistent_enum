@@ -276,7 +276,7 @@ module PersistentEnum
     end
 
     class AbstractDummyModel
-      attr_reader :ordinal, :enum_constant
+      attr_reader :ordinal, :enum_constant, :attributes
 
       def initialize(id, name, attributes = {})
         @ordinal       = id
@@ -289,7 +289,7 @@ module PersistentEnum
         enum_constant.to_sym
       end
 
-      alias_method :id, :ordinal
+      alias id ordinal
 
       def read_attribute(attr)
         case attr.to_s
@@ -302,23 +302,21 @@ module PersistentEnum
         end
       end
 
-      alias_method :[], :read_attribute
+      alias [] read_attribute
 
-      def method_missing(m, *args)
-        m = m.to_s
-        case
-        when m == "id"
-          ordinal
-        when m == self.class.name_attr.to_s
-          enum_constant
-        when @attributes.has_key?(m)
-          if args.size > 0
+      def method_missing(meth, *args)
+        if attributes.has_key?(meth)
+          unless args.empty?
             raise ArgumentError.new("wrong number of arguments (#{args.size} for 0)")
           end
-          @attributes[m]
+          attributes[meth]
         else
           super
         end
+      end
+
+      def respond_to_missing?(meth, include_private = false)
+        attributes.has_key?(meth) || super
       end
 
       def freeze
@@ -334,7 +332,7 @@ module PersistentEnum
 
       def self.for_name(name_attr)
         Class.new(self) do
-          define_singleton_method(:name_attr, ->{name_attr})
+          define_singleton_method(:name_attr, -> { name_attr })
           alias_method name_attr, :enum_constant
         end
       end
