@@ -115,7 +115,7 @@ RSpec.describe PersistentEnum, :database do
 
   context "with an enum model" do
     let(:model) do
-      create_test_model(:with_table, ->(t) { t.string :name }) do
+      create_test_model(:with_table, ->(t) { t.string :name; t.index [:name], unique: true }) do
         acts_as_enum(CONSTANTS)
       end
     end
@@ -180,7 +180,7 @@ RSpec.describe PersistentEnum, :database do
     let(:existing_constant) { :Hello }
 
     let!(:model) do
-      model = create_test_model(:with_existing, ->(t) { t.string :name })
+      model = create_test_model(:with_existing, ->(t) { t.string :name; t.index [:name], unique: true })
       @initial_value  = model.create(id: initial_ordinal, name: initial_constant.to_s)
       @existing_value = model.create(id: existing_ordinal, name: existing_constant.to_s)
       model.acts_as_enum(CONSTANTS)
@@ -238,7 +238,7 @@ RSpec.describe PersistentEnum, :database do
 
   context "with cached constants" do
     let(:model) do
-      create_test_model(:with_constants, ->(t) { t.string :name }) do
+      create_test_model(:with_constants, ->(t) { t.string :name; t.index [:name], unique: true }) do
         PersistentEnum.cache_constants(self, CONSTANTS)
       end
     end
@@ -267,7 +267,7 @@ RSpec.describe PersistentEnum, :database do
 
     let(:model) do
       test_constants = test_constants()
-      create_test_model(:with_complex_names, ->(t) { t.string :name }) do
+      create_test_model(:with_complex_names, ->(t) { t.string :name; t.index [:name], unique: true }) do
         PersistentEnum.cache_constants(self, test_constants.keys)
       end
     end
@@ -322,7 +322,7 @@ RSpec.describe PersistentEnum, :database do
     context "providing a hash" do
       let(:model) do
         members = members()
-        create_test_model(:with_extra_field, ->(t) { t.string :name; t.integer :count }) do
+        create_test_model(:with_extra_field, ->(t) { t.string :name; t.integer :count; t.index [:name], unique: true }) do
           # pre-existing matching, non-matching, and outdated data
           create(name: "One", count: 3)
           create(name: "Two", count: 2)
@@ -347,7 +347,7 @@ RSpec.describe PersistentEnum, :database do
 
     context "using builder interface" do
       let(:model) do
-        create_test_model(:with_extra_field_using_builder, ->(t) { t.string :name; t.integer :count }) do
+        create_test_model(:with_extra_field_using_builder, ->(t) { t.string :name; t.integer :count; t.index [:name], unique: true }) do
           acts_as_enum([]) do
             One(count: 1)
             Two(count: 2)
@@ -375,7 +375,7 @@ RSpec.describe PersistentEnum, :database do
 
     it "requires all required attributes to be provided" do
       expect {
-        create_test_model(:test_invalid_args_a, ->(t) { t.string :name; t.integer :count }) do
+        create_test_model(:test_invalid_args_a, ->(t) { t.string :name; t.integer :count; t.index [:name], unique: true }) do
           acts_as_enum([:Bad])
         end
       }.to raise_error(ArgumentError)
@@ -384,7 +384,7 @@ RSpec.describe PersistentEnum, :database do
 
     context "with attributes with defaults" do
       let(:model) do
-        create_test_model(:test_invalid_args_b, ->(t) { t.string :name; t.integer :count, default: 1 }) do
+        create_test_model(:test_invalid_args_b, ->(t) { t.string :name; t.integer :count, default: 1; t.index [:name], unique: true }) do
           acts_as_enum([]) do
             One()
             Two(count: 2)
@@ -404,7 +404,7 @@ RSpec.describe PersistentEnum, :database do
     end
 
     it "warns if nonexistent attributes are provided" do
-      create_test_model(:test_invalid_args_c, ->(t) { t.string :name }) do
+      create_test_model(:test_invalid_args_c, ->(t) { t.string :name; t.index [:name], unique: true }) do
         acts_as_enum({ :One => { incorrect: 1 } })
       end
 
@@ -422,6 +422,7 @@ RSpec.describe PersistentEnum, :database do
         ActiveRecord::Base.connection.create_table(name.pluralize, id: false) do |t|
           t.column :id, enum_type, primary_key: true, null: false
           t.string :name
+          t.index [:name], unique: true
         end
       end
 
@@ -453,7 +454,7 @@ RSpec.describe PersistentEnum, :database do
 
   context "with the name of the enum value column changed" do
     let(:model) do
-      create_test_model(:test_new_name, ->(t) { t.string :namey }) do
+      create_test_model(:test_new_name, ->(t) { t.string :namey; t.index [:namey], unique: true }) do
         acts_as_enum(CONSTANTS, name_attr: :namey)
       end
     end
@@ -463,11 +464,31 @@ RSpec.describe PersistentEnum, :database do
   it "refuses to create a table in a transaction" do
     expect {
       ActiveRecord::Base.transaction do
-        create_test_model(:test_create_in_transaction, ->(t) { t.string :name }) do
+        create_test_model(:test_create_in_transaction, ->(t) { t.string :name; t.index [:name], unique: true }) do
           acts_as_enum([:A, :B])
         end
       end
     }.to raise_error(RuntimeError, /unsafe class initialization during/)
+  end
+
+  it "refuses to create an enum without an index on the enum constant" do
+    expect {
+      ActiveRecord::Base.transaction do
+        create_test_model(:test_create_without_index, ->(t) { t.string :name }) do
+          acts_as_enum([:A, :B])
+        end
+      end
+    }.to raise_error(RuntimeError, /missing unique index/)
+  end
+
+  it "refuses to create an enum without a unique index on the enum constant" do
+    expect {
+      ActiveRecord::Base.transaction do
+        create_test_model(:test_create_without_index, ->(t) { t.string :name; t.index [:name] }) do
+          acts_as_enum([:A, :B])
+        end
+      end
+    }.to raise_error(RuntimeError, /missing unique index/)
   end
 
   context "with an empty constants array" do
@@ -475,7 +496,7 @@ RSpec.describe PersistentEnum, :database do
     let(:initial_constant) { CONSTANTS.first }
 
     let(:model) do
-      model = create_test_model(:with_empty_constants, ->(t) { t.string :name })
+      model = create_test_model(:with_empty_constants, ->(t) { t.string :name; t.index [:name], unique: true })
       @prior_value = model.create!(id: initial_ordinal, name: initial_constant.to_s)
       model.acts_as_enum([])
       model

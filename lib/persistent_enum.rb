@@ -121,6 +121,10 @@ module PersistentEnum
           required_attributes -= unknown_attributes
         end
 
+        unless model.connection.indexes(model.table_name).detect { |i| i.columns == [name_attr] && i.unique }
+          raise RuntimeError.new("PersistentEnum model #{model.name} detected missing unique index on '#{name_attr}': aborting.")
+        end
+
         if model.connection.open_transactions > 0
           raise RuntimeError.new("PersistentEnum model #{model.name} detected unsafe class initialization during a transaction: aborting.")
         end
