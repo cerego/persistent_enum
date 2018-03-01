@@ -8,33 +8,48 @@ module PersistentEnum
     extend ActiveSupport::Concern
 
     class State
-      attr_accessor :required_members, :name_attr, :sql_enum_type, :by_name, :by_name_insensitive, :by_ordinal, :required_by_ordinal
+      attr_reader :required_members, :name_attr, :sql_enum_type, :by_name, :by_name_insensitive, :by_ordinal, :required_by_ordinal
 
-      def initialize(required_members, name_attr, sql_enum_type)
-        self.required_members    = required_members.freeze
-        self.name_attr           = name_attr
-        self.sql_enum_type       = sql_enum_type
-        self.by_name             = {}.with_indifferent_access
-        self.by_name_insensitive = {}.with_indifferent_access
-        self.by_ordinal          = {}
-        self.required_by_ordinal = {}
-      end
+      def initialize(required_members, name_attr, sql_enum_type, enum_values, required_enum_constants)
+        @required_members    = required_members.freeze
+        @name_attr           = name_attr
+        @sql_enum_type       = sql_enum_type
 
-      def freeze
-        by_name.values.each(&:freeze)
-        by_name.freeze
-        by_name_insensitive.freeze
-        by_ordinal.freeze
-        required_by_ordinal.freeze
-        super
+        enum_values.each do |val|
+          val.attributes.each_value { |attr| attr.freeze }
+          val.freeze
+        end
+
+        @by_ordinal = enum_values.index_by(&:ordinal).freeze
+
+        @by_name    = enum_values
+                        .index_by { |v| v.read_attribute(name_attr) }
+                        .with_indifferent_access
+                        .freeze
+
+        @by_name_insensitive = enum_values
+                                 .index_by { |v| v.read_attribute(name_attr).downcase }
+                                 .with_indifferent_access
+                                 .freeze
+
+        @required_by_ordinal = required_enum_constants
+                                 .map { |name| by_name.fetch(name) }
+                                 .index_by(&:ordinal)
+                                 .freeze
+
+        @insensitive_lookup  = (by_name.size == by_name_insensitive.size)
+
+        freeze
       end
 
       def insensitive_lookup?
-        by_name.size == by_name_insensitive.size
+        @insensitive_lookup
       end
     end
 
     module ClassMethods
+      # Overridden in singleton classes to close over acts-as-enum state in an
+      # subclassing-safe way.
       def _acts_as_enum_state
         nil
       end
@@ -42,44 +57,37 @@ module PersistentEnum
       def initialize_acts_as_enum(required_members, name_attr, sql_enum_type)
         prev_state = _acts_as_enum_state
 
-        ActsAsEnum.register_acts_as_enum(self) if prev_state.nil?
-
-        state = State.new(required_members, name_attr, sql_enum_type)
-
         singleton_class.class_eval do
-          undef_method(:_acts_as_enum_state) if method_defined?(:_acts_as_enum_state)
-          define_method(:_acts_as_enum_state) { state }
+          remove_method(:_acts_as_enum_state) if self.methods(false).include?(:_acts_as_enum_state)
         end
 
-        values = PersistentEnum.cache_constants(self, state.required_members, name_attr: state.name_attr, sql_enum_type: state.sql_enum_type)
-        required_constants = values.map { |val| val.read_attribute(state.name_attr) }
+        ActsAsEnum.register_acts_as_enum(self) if prev_state.nil?
+
+        required_values = PersistentEnum.cache_constants(self, required_members, name_attr: name_attr, sql_enum_type: sql_enum_type)
+        required_enum_constants = required_values.map { |val| val.read_attribute(name_attr) }
 
         # Now we've ensured that our required constants are present, load the rest
         # of the enum from the database (if present)
+        all_values = required_values.dup
         if table_exists?
-          values.concat(unscoped { where.not(id: values) })
+          all_values.concat(unscoped { where.not(id: required_values) })
         end
 
-        values.each do |value|
-          name    = value.enum_constant
-          ordinal = value.ordinal
-
-          # If we already have a equal value in the previous state, we want to use
-          # that rather than a new copy of it
-          if prev_state.present?
-            prev_value = prev_state.by_name[name]
-            value = prev_value if prev_value == value
+        # Normalize values: If we already have a equal value in the previous
+        # state, we want to use that rather than a new copy of it
+        all_values.map! do |value|
+          if prev_state.present? && (prev_value = prev_state.by_name[name]) == value
+            prev_value
+          else
+            value
           end
-
-          state.by_ordinal[ordinal] = value
-          state.by_name[name]       = value
-          state.by_name_insensitive[name.downcase] = value
         end
 
-        # Collect up the required values for #values and #ordinals
-        state.required_by_ordinal = state.by_name.slice(*required_constants).values.index_by(&:ordinal)
+        state = State.new(required_members, name_attr, sql_enum_type, all_values, required_enum_constants)
 
-        state.freeze
+        singleton_class.class_eval do
+          define_method(:_acts_as_enum_state) { state }
+        end
 
         before_destroy { raise ActiveRecord::ReadOnlyRecord }
       end
@@ -147,9 +155,9 @@ module PersistentEnum
     end
 
     # Enum values should not be mutable: allow creation and modification only
-    # before the values array has been initialized.
+    # before the state has been initialized.
     def readonly?
-      self.class.values.present?
+      !self.class._acts_as_enum_state.nil?
     end
 
     def enum_constant
@@ -164,10 +172,6 @@ module PersistentEnum
       read_attribute(:id)
     end
 
-    def freeze
-      enum_constant.freeze
-      super
-    end
 
     # Is this enum member still present in the enum declaration?
     def active?
