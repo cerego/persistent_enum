@@ -99,4 +99,8 @@ RSpec.configure do |config|
 =end
   require 'support/helpers/database_helper'
   config.include DatabaseHelper, :database
+
+  unless DatabaseHelper.db_env == 'postgresql'
+    config.filter_run_excluding :postgresql
+  end
 end

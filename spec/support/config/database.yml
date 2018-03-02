@@ -1,4 +1,10 @@
 ---
-test:
+postgresql:
   adapter: postgresql
   database: persistent_enum_test
+mysql2:
+  adapter: mysql2
+  database: persistent_enum_test
+sqlite3:
+  adapter: sqlite3
+  database: ":memory:"

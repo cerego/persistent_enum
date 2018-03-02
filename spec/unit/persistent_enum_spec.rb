@@ -11,18 +11,23 @@ RSpec.describe PersistentEnum, :database do
   CONSTANTS = [:One, :Two, :Three, :Four].freeze
 
   before(:context) do
-    initialize_database
+    DatabaseHelper.initialize_database
   end
 
-  let(:logger) { spy("logger") }
-
   before(:each) do
-    ActiveRecord::Base.logger = logger
+    if ActiveRecord::Base.logger
+      allow(ActiveRecord::Base.logger).to receive(:warn).and_call_original
+    else
+      ActiveRecord::Base.logger = spy(:logger)
+    end
+    initialize_test_models
   end
 
   after(:each) do
     destroy_test_models
-    ActiveRecord::Base.logger = logger
+    unless ActiveRecord::Base.logger.is_a?(Logger)
+      ActiveRecord::Base.logger = nil
+    end
   end
 
   shared_examples "acts like an enum" do
@@ -131,7 +136,7 @@ RSpec.describe PersistentEnum, :database do
         .to raise_error(ActiveRecord::ReadOnlyRecord)
 
       expect { model::ONE.name = "foo" }
-        .to raise_error(RuntimeError, /can't modify frozen/) # Frozen object
+        .to raise_error(RuntimeError, /can't modify frozen/i) # Frozen object
 
       expect { model.first.update_attribute(:name, "foo") }
         .to raise_error(ActiveRecord::ReadOnlyRecord)
@@ -150,7 +155,9 @@ RSpec.describe PersistentEnum, :database do
 
     it "warns that the table is not present" do
       expect(model).to be_present
-      expect(logger).to have_received(:warn).with(a_string_matching(/Database table for model.*doesn't exist/))
+      expect(ActiveRecord::Base.logger)
+        .to have_received(:warn)
+        .with(a_string_matching(/Database table for model.*doesn't exist/))
     end
 
     it_behaves_like "acts like an enum"
@@ -408,11 +415,13 @@ RSpec.describe PersistentEnum, :database do
         acts_as_enum({ :One => { incorrect: 1 } })
       end
 
-      expect(logger).to have_received(:warn).with(a_string_matching(/missing from table/))
+      expect(ActiveRecord::Base.logger)
+        .to have_received(:warn)
+        .with(a_string_matching(/missing from table/))
     end
   end
 
-  context "using a postgresql enum valued id" do
+  context "using a postgresql enum valued id", :postgresql do
     let(:name) { "with_enum_id" }
     let(:enum_type) { "#{name}_type" }
 
