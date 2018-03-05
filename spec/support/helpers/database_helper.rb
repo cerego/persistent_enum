@@ -53,7 +53,7 @@ module DatabaseHelper
     end
 
     table_name = clazz.table_name
-    if clazz.connection.table_exists?(table_name)
+    if clazz.connection.data_source_exists?(table_name)
       clazz.connection.drop_table(table_name, force: :cascade)
     end
 
