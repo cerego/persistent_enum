@@ -386,7 +386,6 @@ RSpec.describe PersistentEnum, :database do
           acts_as_enum([:Bad])
         end
       }.to raise_error(ArgumentError)
-      destroy_test_model(:test_invalid_args_a)
     end
 
     context "with attributes with defaults" do

@@ -33,30 +33,30 @@ module DatabaseHelper
     model_name = name.to_s.classify
     clazz = Class.new(ActiveRecord::Base)
     Object.const_set(model_name, clazz)
+    @test_models << clazz
     clazz.primary_key = :id
     clazz.class_eval(&block) if block_given?
     clazz.reset_column_information
-    @test_models << clazz
     clazz
   end
 
   def destroy_test_models
     @test_models.reverse_each do |m|
-      destroy_test_model(m.name)
+      destroy_test_model(m)
     end
     @test_models.clear
   end
 
-  def destroy_test_model(name)
-    model_name = name.to_s.classify
-    clazz = Object.const_get(model_name)
-    unless clazz.nil?
-      table_name = clazz.table_name
-      if clazz.table_exists?
-        clazz.connection.drop_table(table_name, force: :cascade)
-      end
-      Object.send(:remove_const, model_name)
-      ActiveSupport::Dependencies::Reference.clear!
+  def destroy_test_model(clazz)
+    if Object.const_defined?(clazz.name)
+      Object.send(:remove_const, clazz.name)
     end
+
+    table_name = clazz.table_name
+    if clazz.connection.table_exists?(table_name)
+      clazz.connection.drop_table(table_name, force: :cascade)
+    end
+
+    ActiveSupport::Dependencies::Reference.clear!
   end
 end
