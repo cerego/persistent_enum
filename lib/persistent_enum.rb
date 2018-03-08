@@ -5,6 +5,7 @@ require "persistent_enum/acts_as_enum"
 require "active_support"
 require "active_support/inflector"
 require "active_record"
+require "activerecord-import"
 
 # Provide a database-backed enumeration between indices and symbolic
 # values. This allows us to have a valid foreign key which behaves like a
@@ -50,7 +51,7 @@ module PersistentEnum
                enum_member.ordinal
              else
                m = target_class.value_of(enum_member)
-               raise NameError.new("#{target_class.to_s}: Invalid enum constant '#{enum_member}'") if m.nil?
+               raise NameError.new("#{target_class}: Invalid enum constant '#{enum_member}'") if m.nil?
                m.ordinal
              end
         write_attribute(foreign_key, id)
@@ -121,6 +122,10 @@ module PersistentEnum
           required_attributes -= unknown_attributes
         end
 
+        unless model.connection.indexes(model.table_name).detect { |i| i.columns == [name_attr] && i.unique }
+          raise RuntimeError.new("PersistentEnum model #{model.name} detected missing unique index on '#{name_attr}': aborting.")
+        end
+
         if model.connection.open_transactions > 0
           raise RuntimeError.new("PersistentEnum model #{model.name} detected unsafe class initialization during a transaction: aborting.")
         end
@@ -134,43 +139,25 @@ module PersistentEnum
           end
         end
 
-        values = model.transaction do
-          values_by_name = model.where(name_attr => required_members.keys).index_by { |m| m.read_attribute(name_attr) }
+        expected_rows = required_members.map do |name, attrs|
+          attr_names = attrs.keys
 
-          # Update or create
-          required_members.each do |name, attrs|
-            attr_names = attrs.keys
-
-            if (extra_attrs = (attr_names - table_attributes)).present?
-              log_warning("Enum class error: specified attributes #{extra_attrs.inspect} missing from table. Dropping.")
-              attrs = attrs.except(*extra_attrs)
-            end
-            if (missing_attrs = (required_attributes - attr_names)).present?
-              raise ArgumentError.new("Enum member error: required attributes #{missing_attrs.inspect} not provided")
-            end
-
-            current = values_by_name[name]
-
-            if current.present?
-              if ActiveRecord::VERSION::MAJOR == 3 # bypass mass assignment protection
-                current.assign_attributes(attrs, without_protection: true)
-              else
-                current.assign_attributes(attrs)
-              end
-              current.save! if current.changed?
-            else
-              new_attrs = attrs.merge(name_attr => name)
-              new_attrs["id"] = name if sql_enum_type
-
-              if ActiveRecord::VERSION::MAJOR == 3
-                new_model = model.create!(new_attrs, without_protection: true)
-              else
-                new_model = model.create!(new_attrs)
-              end
-              values_by_name[name] = new_model
-            end
+          if (extra_attrs = (attr_names - table_attributes)).present?
+            log_warning("Enum class error: specified attributes #{extra_attrs.inspect} missing from table. Dropping.")
+            attrs = attrs.except(*extra_attrs)
           end
-          values_by_name.values
+          if (missing_attrs = (required_attributes - attr_names)).present?
+            raise ArgumentError.new("Enum member error: required attributes #{missing_attrs.inspect} not provided")
+          end
+
+          new_attrs = attrs.merge(name_attr => name)
+          new_attrs["id"] = name if sql_enum_type
+          new_attrs
+        end
+
+        values = model.transaction do
+          upsert_records(model, name_attr, expected_rows)
+          model.where(name_attr => required_members.keys).to_a
         end
       else
         log_warning("Database table for model #{model.name} doesn't exist, initializing constants with dummy records instead.")
@@ -186,6 +173,31 @@ module PersistentEnum
       cache_values(model, values, name_attr)
 
       values
+    end
+
+    def upsert_records(model, name_attr, expected_rows)
+      # Not all rows will have the same attributes to upsert: group and upsert by attributes
+      expected_rows.group_by(&:keys).each do |row_attrs, rows|
+        upsert_columns = row_attrs - [name_attr, 'id']
+
+        case model.connection.adapter_name
+        when 'PostgreSQL'
+          model.import(rows, on_duplicate_key_update: { conflict_target: [name_attr], columns: upsert_columns })
+        when 'Mysql2'
+          if upsert_columns.present?
+            model.import(rows, on_duplicate_key_update: upsert_columns)
+          else
+            model.import(rows, on_duplicate_key_ignore: true)
+          end
+        else
+          # No upsert support: use first_or_create optimistically
+          rows.each do |row|
+            record = model.lock.where(name_attr => row[name_attr]).first_or_create!(row.except('id', name_attr))
+            record.assign_attributes(row)
+            record.save! if record.changed?
+          end
+        end
+      end
     end
 
     # Given an 'enum-like' table with (id, name, ...) structure, load existing
@@ -276,7 +288,7 @@ module PersistentEnum
     end
 
     class AbstractDummyModel
-      attr_reader :ordinal, :enum_constant
+      attr_reader :ordinal, :enum_constant, :attributes
 
       def initialize(id, name, attributes = {})
         @ordinal       = id
@@ -289,7 +301,7 @@ module PersistentEnum
         enum_constant.to_sym
       end
 
-      alias_method :id, :ordinal
+      alias id ordinal
 
       def read_attribute(attr)
         case attr.to_s
@@ -302,23 +314,21 @@ module PersistentEnum
         end
       end
 
-      alias_method :[], :read_attribute
+      alias [] read_attribute
 
-      def method_missing(m, *args)
-        m = m.to_s
-        case
-        when m == "id"
-          ordinal
-        when m == self.class.name_attr.to_s
-          enum_constant
-        when @attributes.has_key?(m)
-          if args.size > 0
+      def method_missing(meth, *args)
+        if attributes.has_key?(meth)
+          unless args.empty?
             raise ArgumentError.new("wrong number of arguments (#{args.size} for 0)")
           end
-          @attributes[m]
+          attributes[meth]
         else
           super
         end
+      end
+
+      def respond_to_missing?(meth, include_private = false)
+        attributes.has_key?(meth) || super
       end
 
       def freeze
@@ -334,7 +344,7 @@ module PersistentEnum
 
       def self.for_name(name_attr)
         Class.new(self) do
-          define_singleton_method(:name_attr, ->{name_attr})
+          define_singleton_method(:name_attr, -> { name_attr })
           alias_method name_attr, :enum_constant
         end
       end
