@@ -1,3 +1,3 @@
 module PersistentEnum
-  VERSION = "1.0.23"
+  VERSION = "1.1.0"
 end
