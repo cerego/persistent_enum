@@ -110,94 +110,19 @@ module PersistentEnum
       # constants are defined (if not functional) in the case that the database
       # isn't present yet. If no database is present, create dummy values to
       # populate the constants.
-      if model.table_exists?
-        internal_attributes = ["id", name_attr]
-        table_attributes = (model.attribute_names - internal_attributes)
-
-        # If not otherwise specified, only attributes without defaults are required
-        required_attributes ||= model.column_defaults.map { |attr, default| attr if default.nil? }.compact - internal_attributes
-
-        unless (unknown_attributes = (required_attributes - table_attributes)).blank?
-          log_warning("Enum error: required attributes #{unknown_attrs.inspect} missing from table. Dropping.")
-          required_attributes -= unknown_attributes
+      values =
+        begin
+          cache_constants_in_table(model, name_attr, required_members, required_attributes, sql_enum_type)
+        rescue EnumTableInvalid => ex
+          log_warning("Database table initialization error for model #{model.name}, "\
+                      "initializing constants with dummy records instead: " +
+                      ex.message)
+          cache_constants_in_dummy_class(model, name_attr, required_members, required_attributes, sql_enum_type)
         end
-
-        unless model.connection.indexes(model.table_name).detect { |i| i.columns == [name_attr] && i.unique }
-          raise RuntimeError.new("PersistentEnum model #{model.name} detected missing unique index on '#{name_attr}': aborting.")
-        end
-
-        if model.connection.open_transactions > 0
-          raise RuntimeError.new("PersistentEnum model #{model.name} detected unsafe class initialization during a transaction: aborting.")
-        end
-
-        if sql_enum_type
-          begin
-            ensure_sql_enum_members(model.connection, required_members.keys, sql_enum_type)
-          rescue MissingEnumTypeError
-            puts "Database enum type missing for #{model.name}: falling back to default id handling"
-            sql_enum_type = nil
-          end
-        end
-
-        expected_rows = required_members.map do |name, attrs|
-          attr_names = attrs.keys
-
-          if (extra_attrs = (attr_names - table_attributes)).present?
-            log_warning("Enum class error: specified attributes #{extra_attrs.inspect} missing from table. Dropping.")
-            attrs = attrs.except(*extra_attrs)
-          end
-          if (missing_attrs = (required_attributes - attr_names)).present?
-            raise ArgumentError.new("Enum member error: required attributes #{missing_attrs.inspect} not provided")
-          end
-
-          new_attrs = attrs.merge(name_attr => name)
-          new_attrs["id"] = name if sql_enum_type
-          new_attrs
-        end
-
-        values = model.transaction do
-          upsert_records(model, name_attr, expected_rows)
-          model.where(name_attr => required_members.keys).to_a
-        end
-      else
-        log_warning("Database table for model #{model.name} doesn't exist, initializing constants with dummy records instead.")
-        dummyclass = build_dummy_class(model, name_attr)
-
-        next_id = 999999999
-        values = required_members.map do |member_name, attrs|
-          id   = sql_enum_type ? member_name : (next_id += 1)
-          dummyclass.new(id, member_name, attrs)
-        end
-      end
 
       cache_values(model, values, name_attr)
 
       values
-    end
-
-    def upsert_records(model, name_attr, expected_rows)
-      # Not all rows will have the same attributes to upsert: group and upsert by attributes
-      expected_rows.group_by(&:keys).each do |row_attrs, rows|
-        upsert_columns = row_attrs - [name_attr, 'id']
-
-        case model.connection.adapter_name
-        when 'PostgreSQL'
-          model.import(rows, on_duplicate_key_update: { conflict_target: [name_attr], columns: upsert_columns })
-        when 'Mysql2'
-          if upsert_columns.present?
-            model.import(rows, on_duplicate_key_update: upsert_columns)
-          else
-            model.import(rows, on_duplicate_key_ignore: true)
-          end
-        else
-          # No upsert support: use first_or_create optimistically
-          rows.each do |row|
-            record = model.lock.where(name_attr => row[name_attr]).first_or_create!(row.except('id', name_attr))
-            record.assign_attributes(row)
-            record.save! if record.changed?
-          end
-        end
-      end
     end
 
     # Given an 'enum-like' table with (id, name, ...) structure, load existing
@@ -224,6 +149,103 @@ module PersistentEnum
     end
 
     private
+
+    class EnumTableInvalid < RuntimeError; end
+
+    def cache_constants_in_table(model, name_attr, required_members, required_attributes, sql_enum_type)
+      unless model.table_exists?
+        raise EnumTableInvalid.new("Database table for model #{model.name} doesn't exist")
+      end
+
+      internal_attributes = ["id", name_attr]
+      table_attributes = (model.attribute_names - internal_attributes)
+
+      # If not otherwise specified, only attributes without defaults are required
+      required_attributes ||= model.column_defaults.map { |attr, default| attr if default.nil? }.compact - internal_attributes
+
+      unless (unknown_attributes = (required_attributes - table_attributes)).blank?
+        log_warning("PersistentEnum error: required attributes #{unknown_attrs.inspect} for model #{model.name} not found in table - ignoring.")
+        required_attributes -= unknown_attributes
+      end
+
+      unless model.connection.indexes(model.table_name).detect { |i| i.columns == [name_attr] && i.unique }
+        raise EnumTableInvalid.new("detected missing unique index on '#{name_attr}'")
+      end
+
+      if model.connection.open_transactions > 0
+        # This case particularly doesn't fall back to dummy initialization as it
+        # indicates that the PersistentEnum wasn't initialized at startup: a
+        # silent fallback to a dummy model could go unnoticed.
+        raise RuntimeError.new("PersistentEnum model #{model.name} detected unsafe class initialization during a transaction: aborting.")
+      end
+
+      if sql_enum_type
+        begin
+          ensure_sql_enum_members(model.connection, required_members.keys, sql_enum_type)
+        rescue MissingEnumTypeError
+          log_warning("Database enum type missing for PersistentEnum #{model.name}: falling back to default id handling")
+          sql_enum_type = nil
+        end
+      end
+
+      expected_rows = required_members.map do |name, attrs|
+        attr_names = attrs.keys
+
+        if (extra_attrs = (attr_names - table_attributes)).present?
+          log_warning("PersistentEnum error: specified attributes #{extra_attrs.inspect} for model #{model.name} missing from table - ignoring.")
+          attrs = attrs.except(*extra_attrs)
+        end
+
+        if (missing_attrs = (required_attributes - attr_names)).present?
+          raise EnumTableInvalid.new("enum member error: required attributes #{missing_attrs.inspect} not provided")
+        end
+
+        new_attrs = attrs.merge(name_attr => name)
+        new_attrs["id"] = name if sql_enum_type
+        new_attrs
+      end
+
+      model.transaction do
+        upsert_records(model, name_attr, expected_rows)
+        model.where(name_attr => required_members.keys).to_a
+      end
+    end
+
+    def cache_constants_in_dummy_class(model, name_attr, required_members, required_attributes, sql_enum_type)
+      dummyclass = build_dummy_class(model, name_attr)
+
+      next_id = 999999999
+
+      required_members.map do |member_name, attrs|
+        id = sql_enum_type ? member_name : (next_id += 1)
+        dummyclass.new(id, member_name, attrs)
+      end
+    end
+
+    def upsert_records(model, name_attr, expected_rows)
+      # Not all rows will have the same attributes to upsert: group and upsert by attributes
+      expected_rows.group_by(&:keys).each do |row_attrs, rows|
+        upsert_columns = row_attrs - [name_attr, 'id']
+
+        case model.connection.adapter_name
+        when 'PostgreSQL'
+          model.import(rows, on_duplicate_key_update: { conflict_target: [name_attr], columns: upsert_columns })
+        when 'Mysql2'
+          if upsert_columns.present?
+            model.import(rows, on_duplicate_key_update: upsert_columns)
+          else
+            model.import(rows, on_duplicate_key_ignore: true)
+          end
+        else
+          # No upsert support: use first_or_create optimistically
+          rows.each do |row|
+            record = model.lock.where(name_attr => row[name_attr]).first_or_create!(row.except('id', name_attr))
+            record.assign_attributes(row)
+            record.save! if record.changed?
+          end
+        end
+      end
+    end
 
     ENUM_TYPE_LOCK_KEY = 0x757a6cafedc6084d # Random 64-bit key
     class MissingEnumTypeError < RuntimeError; end

@@ -146,21 +146,19 @@ RSpec.describe PersistentEnum, :database do
     end
   end
 
-  context "with a table-less enum" do
-    let(:model) do
-      create_test_model(:without_table, nil, create_table: false) do
-        acts_as_enum(CONSTANTS)
-      end
-    end
-
-    it "warns that the table is not present" do
+  shared_examples "falls back to a dummy model" do |name_attr: 'name'|
+    it "warns that it is falling back" do
       expect(model).to be_present
       expect(ActiveRecord::Base.logger)
         .to have_received(:warn)
-        .with(a_string_matching(/Database table for model.*doesn't exist/))
+        .with(a_string_matching(/Database table initialization error.*dummy records/))
     end
 
-    it_behaves_like "acts like an enum"
+    it "makes a dummy model" do
+      dummy_model = PersistentEnum.dummy_class(model, name_attr)
+      expect(dummy_model).to be_present
+      expect(model.values).to all(be_kind_of(dummy_model))
+    end
 
     it "initializes dummy values correctly" do
       model.values.each do |val|
@@ -177,6 +175,17 @@ RSpec.describe PersistentEnum, :database do
         expect(val[:name]).to  eq(c)
       end
     end
+  end
+
+  context "with a table-less enum" do
+    let(:model) do
+      create_test_model(:without_table, nil, create_table: false) do
+        acts_as_enum(CONSTANTS)
+      end
+    end
+
+    it_behaves_like "falls back to a dummy model"
+    it_behaves_like "acts like an enum"
   end
 
   context "with existing data" do
@@ -380,12 +389,20 @@ RSpec.describe PersistentEnum, :database do
       it_behaves_like "acts like an enum with extra fields"
     end
 
-    it "requires all required attributes to be provided" do
-      expect {
+    context "with missing required attributes" do
+      let(:model) do
         create_test_model(:test_invalid_args_a, ->(t) { t.string :name; t.integer :count; t.index [:name], unique: true }) do
           acts_as_enum([:Bad])
         end
-      }.to raise_error(ArgumentError)
+      end
+
+      it_behaves_like "falls back to a dummy model"
+
+      it "warns that the required attributes were missing" do
+        expect(model.logger)
+          .to have_received(:warn)
+          .with(a_string_matching(/required attributes.*not provided/))
+      end
     end
 
     context "with attributes with defaults" do
@@ -479,24 +496,36 @@ RSpec.describe PersistentEnum, :database do
     }.to raise_error(RuntimeError, /unsafe class initialization during/)
   end
 
-  it "refuses to create an enum without an index on the enum constant" do
-    expect {
-      ActiveRecord::Base.transaction do
-        create_test_model(:test_create_without_index, ->(t) { t.string :name }) do
-          acts_as_enum([:A, :B])
-        end
+  context "without an index on the enum constant" do
+    let(:model) do
+      create_test_model(:test_create_without_index, ->(t) { t.string :name }) do
+        acts_as_enum([:A, :B])
       end
-    }.to raise_error(RuntimeError, /missing unique index/)
+    end
+
+    it_behaves_like "falls back to a dummy model"
+
+    it "warns that the unique index was missing" do
+      expect(model.logger)
+        .to have_received(:warn)
+        .with(a_string_matching(/missing unique index/))
+    end
   end
 
-  it "refuses to create an enum without a unique index on the enum constant" do
-    expect {
-      ActiveRecord::Base.transaction do
-        create_test_model(:test_create_without_index, ->(t) { t.string :name; t.index [:name] }) do
-          acts_as_enum([:A, :B])
-        end
+  context "without a unique index on the enum constant" do
+    let(:model) do
+      create_test_model(:test_create_without_index, ->(t) { t.string :name; t.index [:name] }) do
+        acts_as_enum([:A, :B])
       end
-    }.to raise_error(RuntimeError, /missing unique index/)
+    end
+
+    it_behaves_like "falls back to a dummy model"
+
+    it "warns that the unique index was missing" do
+      expect(model.logger)
+        .to have_received(:warn)
+              .with(a_string_matching(/missing unique index/))
+    end
   end
 
   context "with an empty constants array" do
