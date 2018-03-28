@@ -146,33 +146,55 @@ RSpec.describe PersistentEnum, :database do
     end
   end
 
-  shared_examples "falls back to a dummy model" do |name_attr: 'name'|
-    it "warns that it is falling back" do
-      expect(model).to be_present
-      expect(ActiveRecord::Base.logger)
-        .to have_received(:warn)
-        .with(a_string_matching(/Database table initialization error.*dummy records/))
+  def self.with_dummy_rake(&block)
+    context "with rake defined" do
+      around(:each) do |example|
+        rake = OpenStruct.new(application: OpenStruct.new(top_level_tasks: [:fake]))
+        Object.const_set(:Rake, rake)
+        example.run
+        Object.send(:remove_const, :Rake)
+      end
+
+      instance_exec(&block)
+    end
+  end
+
+  shared_examples "falls back to a dummy model" do |name_attr: 'name', sql_enum: false|
+    context "without rake defined" do
+      it "raises the error directly" do
+        expect { model }.to raise_error(PersistentEnum::EnumTableInvalid)
+      end
     end
 
-    it "makes a dummy model" do
-      dummy_model = PersistentEnum.dummy_class(model, name_attr)
-      expect(dummy_model).to be_present
-      expect(model.values).to all(be_kind_of(dummy_model))
-    end
+    with_dummy_rake do
+      it "warns that it is falling back" do
+        expect(model).to be_present
+        expect(ActiveRecord::Base.logger)
+          .to have_received(:warn)
+                .with(a_string_matching(/Database table initialization error.*dummy records/))
+      end
 
-    it "initializes dummy values correctly" do
-      model.values.each do |val|
-        i = val.ordinal
-        expect(i).to be_a(Integer)
-        expect(val.id).to    eq(i)
-        expect(val["id"]).to eq(i)
-        expect(val[:id]).to  eq(i)
+      it "makes a dummy model" do
+        dummy_model = PersistentEnum.dummy_class(model, name_attr)
+        expect(dummy_model).to be_present
+        expect(model.values).to all(be_kind_of(dummy_model))
+      end
 
-        c = val.enum_constant
-        expect(c).to be_a(String)
-        expect(val.name).to    eq(c)
-        expect(val["name"]).to eq(c)
-        expect(val[:name]).to  eq(c)
+      it "initializes dummy values correctly" do
+        model.values.each do |val|
+          i = val.ordinal
+          enum_type = sql_enum ? String : Integer
+          expect(i).to be_a(enum_type)
+          expect(val.id).to    eq(i)
+          expect(val["id"]).to eq(i)
+          expect(val[:id]).to  eq(i)
+
+          c = val.enum_constant
+          expect(c).to be_a(String)
+          expect(val.name).to    eq(c)
+          expect(val["name"]).to eq(c)
+          expect(val[:name]).to  eq(c)
+        end
       end
     end
   end
@@ -185,7 +207,10 @@ RSpec.describe PersistentEnum, :database do
     end
 
     it_behaves_like "falls back to a dummy model"
-    it_behaves_like "acts like an enum"
+
+    with_dummy_rake do
+      it_behaves_like "acts like an enum"
+    end
   end
 
   context "with existing data" do
@@ -385,8 +410,12 @@ RSpec.describe PersistentEnum, :database do
         end
       end
 
-      it_behaves_like "acts like an enum"
-      it_behaves_like "acts like an enum with extra fields"
+      it_behaves_like "falls back to a dummy model"
+
+      with_dummy_rake do
+        it_behaves_like "acts like an enum"
+        it_behaves_like "acts like an enum with extra fields"
+      end
     end
 
     context "with missing required attributes" do
@@ -398,10 +427,12 @@ RSpec.describe PersistentEnum, :database do
 
       it_behaves_like "falls back to a dummy model"
 
-      it "warns that the required attributes were missing" do
-        expect(model.logger)
-          .to have_received(:warn)
-          .with(a_string_matching(/required attributes.*not provided/))
+      with_dummy_rake do
+        it "warns that the required attributes were missing" do
+          expect(model.logger)
+            .to have_received(:warn)
+                  .with(a_string_matching(/required attributes.*not provided/))
+        end
       end
     end
 
@@ -455,7 +486,7 @@ RSpec.describe PersistentEnum, :database do
         ActiveRecord::Base.connection.execute("DROP TYPE #{enum_type} CASCADE")
       end
 
-      let!(:model) do
+      let(:model) do
         enum_type = enum_type()
         create_test_model(:with_enum_id, nil, create_table: false) do
           acts_as_enum(CONSTANTS, sql_enum_type: enum_type)
@@ -466,14 +497,17 @@ RSpec.describe PersistentEnum, :database do
     end
 
     context "without table" do
-      let!(:model) do
+      let(:model) do
         enum_type = enum_type()
         create_test_model(:no_table_enum_id, nil, create_table: false) do
           acts_as_enum(CONSTANTS, sql_enum_type: enum_type)
         end
       end
 
-      it_behaves_like "acts like an enum"
+      it_behaves_like "falls back to a dummy model", sql_enum: true
+      with_dummy_rake do
+        it_behaves_like "acts like an enum"
+      end
     end
   end
 
@@ -505,10 +539,12 @@ RSpec.describe PersistentEnum, :database do
 
     it_behaves_like "falls back to a dummy model"
 
-    it "warns that the unique index was missing" do
-      expect(model.logger)
-        .to have_received(:warn)
-        .with(a_string_matching(/missing unique index/))
+    with_dummy_rake do
+      it "warns that the unique index was missing" do
+        expect(model.logger)
+          .to have_received(:warn)
+                .with(a_string_matching(/missing unique index/))
+      end
     end
   end
 
@@ -521,10 +557,12 @@ RSpec.describe PersistentEnum, :database do
 
     it_behaves_like "falls back to a dummy model"
 
-    it "warns that the unique index was missing" do
-      expect(model.logger)
-        .to have_received(:warn)
-              .with(a_string_matching(/missing unique index/))
+    with_dummy_rake do
+      it "warns that the unique index was missing" do
+        expect(model.logger)
+          .to have_received(:warn)
+                .with(a_string_matching(/missing unique index/))
+      end
     end
   end
 

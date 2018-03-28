@@ -12,6 +12,8 @@ require "activerecord-import"
 # enumeration. Values are cached at startup, and cannot be changed.
 module PersistentEnum
   extend ActiveSupport::Concern
+  class EnumTableInvalid < RuntimeError; end
+  class MissingEnumTypeError < RuntimeError; end
 
   module ClassMethods
     def acts_as_enum(required_constants, name_attr: :name, sql_enum_type: nil, &constant_init_block)
@@ -114,6 +116,17 @@ module PersistentEnum
         begin
           cache_constants_in_table(model, name_attr, required_members, required_attributes, sql_enum_type)
         rescue EnumTableInvalid => ex
+          # If we're running the application in any way, under no circumstances
+          # do we want to introduce the dummy models: crash out now. Our
+          # conservative heuristic to detect a 'safe' loading outside the
+          # application is whether there is a current Rake task.
+          unless Object.const_defined?(:Rake) && Rake.try(:application)&.top_level_tasks.present?
+            raise
+          end
+
+          # Otherwise, we want to try as hard as possible to allow the
+          # application to be initialized enough to run the Rake task (e.g.
+          # db:migrate).
           log_warning("Database table initialization error for model #{model.name}, "\
                       "initializing constants with dummy records instead: " +
                       ex.message)
@@ -149,8 +162,6 @@ module PersistentEnum
     end
 
     private
-
-    class EnumTableInvalid < RuntimeError; end
 
     def cache_constants_in_table(model, name_attr, required_members, required_attributes, sql_enum_type)
       unless model.table_exists?
@@ -248,7 +259,7 @@ module PersistentEnum
     end
 
     ENUM_TYPE_LOCK_KEY = 0x757a6cafedc6084d # Random 64-bit key
-    class MissingEnumTypeError < RuntimeError; end
+
     def ensure_sql_enum_members(connection, names, sql_enum_type)
       # It may be the case that an enum type doesn't yet exist despite the table
       # existing, for example if the table is presently being migrated to an
