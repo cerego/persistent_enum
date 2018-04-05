@@ -384,6 +384,43 @@ RSpec.describe PersistentEnum, :database do
         expect(model.all_values).to include(z)
         expect(model.values).not_to include(z)
       end
+
+      context "when reinitializing" do
+        let!(:model) { super() }
+
+        it "uses the same constant" do
+          old_constant = model.const_get(:ONE)
+          model.reinitialize_acts_as_enum
+          new_constant = model.const_get(:ONE)
+          expect(new_constant).to equal(old_constant)
+          expect(new_constant).to equal(model.value_of("One"))
+        end
+
+        it "handles a change in an attribute" do
+          model.where(name: "One").update_all(count: 10)
+          old_constant = model.const_get(:ONE).reload
+          expect(old_constant.count).to eq(10)
+
+          model.reinitialize_acts_as_enum
+          new_constant = model.const_get(:ONE)
+          expect(new_constant.count).to eq(1)
+          expect(new_constant).to equal(old_constant)
+          expect(new_constant).to equal(model.value_of("One"))
+        end
+
+        it "handles a change in enum constant by replacing" do
+          model.where(name: "One").update_all(name: "oNe")
+          old_constant = model.const_get(:ONE).reload
+          # Note this has completely broken the enum indexing. Not relevant to test.
+          expect(old_constant.name).to eq("oNe")
+
+          model.reinitialize_acts_as_enum
+          new_constant = model.const_get(:ONE)
+          expect(new_constant.name).to eq("One")
+          expect(new_constant).not_to equal(old_constant)
+          expect(new_constant).to equal(model.value_of("One"))
+        end
+      end
     end
 
     context "using builder interface" do

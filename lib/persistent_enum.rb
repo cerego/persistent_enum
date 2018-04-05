@@ -133,9 +133,7 @@ module PersistentEnum
           cache_constants_in_dummy_class(model, name_attr, required_members, required_attributes, sql_enum_type)
         end
 
-      cache_values(model, values, name_attr)
-
-      values
+      return cache_values(model, values, name_attr)
     end
 
     # Given an 'enum-like' table with (id, name, ...) structure, load existing
@@ -286,16 +284,25 @@ module PersistentEnum
       end
     end
 
-    # Set each value as a constant on this class. If reloading, only update if
-    # it's changed.
+    # Set each value as a constant on this class. If reinitializing, only
+    # replace if the enum constant has changed, otherwise update attributes as
+    # necessary.
     def cache_values(model, values, name_attr)
-      values.each do |value|
+      values.map do |value|
         constant_name = constant_name(value.read_attribute(name_attr))
 
         if model.const_defined?(constant_name, false)
-          if model.const_get(constant_name, false) != value
+          existing_value = model.const_get(constant_name, false)
+          if existing_value.read_attribute(name_attr) != value.read_attribute(name_attr)
+            # Replace with new value
             model.send(:remove_const, constant_name)
             model.const_set(constant_name, value)
+          elsif existing_value.attributes != value.attributes
+            existing_value.attributes = value.attributes
+            existing_value.clear_changes_information
+            existing_value
+          else
+            existing_value
           end
         else
           model.const_set(constant_name, value)
