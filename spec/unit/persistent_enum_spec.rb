@@ -146,6 +146,59 @@ RSpec.describe PersistentEnum, :database do
     end
   end
 
+  def self.with_dummy_rake(&block)
+    context "with rake defined" do
+      around(:each) do |example|
+        rake = OpenStruct.new(application: OpenStruct.new(top_level_tasks: [:fake]))
+        Object.const_set(:Rake, rake)
+        example.run
+        Object.send(:remove_const, :Rake)
+      end
+
+      instance_exec(&block)
+    end
+  end
+
+  shared_examples "falls back to a dummy model" do |name_attr: 'name', sql_enum: false|
+    context "without rake defined" do
+      it "raises the error directly" do
+        expect { model }.to raise_error(PersistentEnum::EnumTableInvalid)
+      end
+    end
+
+    with_dummy_rake do
+      it "warns that it is falling back" do
+        expect(model).to be_present
+        expect(ActiveRecord::Base.logger)
+          .to have_received(:warn)
+                .with(a_string_matching(/Database table initialization error.*dummy records/))
+      end
+
+      it "makes a dummy model" do
+        dummy_model = PersistentEnum.dummy_class(model, name_attr)
+        expect(dummy_model).to be_present
+        expect(model.values).to all(be_kind_of(dummy_model))
+      end
+
+      it "initializes dummy values correctly" do
+        model.values.each do |val|
+          i = val.ordinal
+          enum_type = sql_enum ? String : Integer
+          expect(i).to be_a(enum_type)
+          expect(val.id).to    eq(i)
+          expect(val["id"]).to eq(i)
+          expect(val[:id]).to  eq(i)
+
+          c = val.enum_constant
+          expect(c).to be_a(String)
+          expect(val.name).to    eq(c)
+          expect(val["name"]).to eq(c)
+          expect(val[:name]).to  eq(c)
+        end
+      end
+    end
+  end
+
   context "with a table-less enum" do
     let(:model) do
       create_test_model(:without_table, nil, create_table: false) do
@@ -153,29 +206,10 @@ RSpec.describe PersistentEnum, :database do
       end
     end
 
-    it "warns that the table is not present" do
-      expect(model).to be_present
-      expect(ActiveRecord::Base.logger)
-        .to have_received(:warn)
-        .with(a_string_matching(/Database table for model.*doesn't exist/))
-    end
+    it_behaves_like "falls back to a dummy model"
 
-    it_behaves_like "acts like an enum"
-
-    it "initializes dummy values correctly" do
-      model.values.each do |val|
-        i = val.ordinal
-        expect(i).to be_a(Integer)
-        expect(val.id).to    eq(i)
-        expect(val["id"]).to eq(i)
-        expect(val[:id]).to  eq(i)
-
-        c = val.enum_constant
-        expect(c).to be_a(String)
-        expect(val.name).to    eq(c)
-        expect(val["name"]).to eq(c)
-        expect(val[:name]).to  eq(c)
-      end
+    with_dummy_rake do
+      it_behaves_like "acts like an enum"
     end
   end
 
@@ -376,16 +410,30 @@ RSpec.describe PersistentEnum, :database do
         end
       end
 
-      it_behaves_like "acts like an enum"
-      it_behaves_like "acts like an enum with extra fields"
+      it_behaves_like "falls back to a dummy model"
+
+      with_dummy_rake do
+        it_behaves_like "acts like an enum"
+        it_behaves_like "acts like an enum with extra fields"
+      end
     end
 
-    it "requires all required attributes to be provided" do
-      expect {
+    context "with missing required attributes" do
+      let(:model) do
         create_test_model(:test_invalid_args_a, ->(t) { t.string :name; t.integer :count; t.index [:name], unique: true }) do
           acts_as_enum([:Bad])
         end
-      }.to raise_error(ArgumentError)
+      end
+
+      it_behaves_like "falls back to a dummy model"
+
+      with_dummy_rake do
+        it "warns that the required attributes were missing" do
+          expect(model.logger)
+            .to have_received(:warn)
+                  .with(a_string_matching(/required attributes.*not provided/))
+        end
+      end
     end
 
     context "with attributes with defaults" do
@@ -438,7 +486,7 @@ RSpec.describe PersistentEnum, :database do
         ActiveRecord::Base.connection.execute("DROP TYPE #{enum_type} CASCADE")
       end
 
-      let!(:model) do
+      let(:model) do
         enum_type = enum_type()
         create_test_model(:with_enum_id, nil, create_table: false) do
           acts_as_enum(CONSTANTS, sql_enum_type: enum_type)
@@ -449,14 +497,17 @@ RSpec.describe PersistentEnum, :database do
     end
 
     context "without table" do
-      let!(:model) do
+      let(:model) do
         enum_type = enum_type()
         create_test_model(:no_table_enum_id, nil, create_table: false) do
           acts_as_enum(CONSTANTS, sql_enum_type: enum_type)
         end
       end
 
-      it_behaves_like "acts like an enum"
+      it_behaves_like "falls back to a dummy model", sql_enum: true
+      with_dummy_rake do
+        it_behaves_like "acts like an enum"
+      end
     end
   end
 
@@ -479,24 +530,40 @@ RSpec.describe PersistentEnum, :database do
     }.to raise_error(RuntimeError, /unsafe class initialization during/)
   end
 
-  it "refuses to create an enum without an index on the enum constant" do
-    expect {
-      ActiveRecord::Base.transaction do
-        create_test_model(:test_create_without_index, ->(t) { t.string :name }) do
-          acts_as_enum([:A, :B])
-        end
+  context "without an index on the enum constant" do
+    let(:model) do
+      create_test_model(:test_create_without_index, ->(t) { t.string :name }) do
+        acts_as_enum([:A, :B])
       end
-    }.to raise_error(RuntimeError, /missing unique index/)
+    end
+
+    it_behaves_like "falls back to a dummy model"
+
+    with_dummy_rake do
+      it "warns that the unique index was missing" do
+        expect(model.logger)
+          .to have_received(:warn)
+                .with(a_string_matching(/missing unique index/))
+      end
+    end
   end
 
-  it "refuses to create an enum without a unique index on the enum constant" do
-    expect {
-      ActiveRecord::Base.transaction do
-        create_test_model(:test_create_without_index, ->(t) { t.string :name; t.index [:name] }) do
-          acts_as_enum([:A, :B])
-        end
+  context "without a unique index on the enum constant" do
+    let(:model) do
+      create_test_model(:test_create_without_index, ->(t) { t.string :name; t.index [:name] }) do
+        acts_as_enum([:A, :B])
       end
-    }.to raise_error(RuntimeError, /missing unique index/)
+    end
+
+    it_behaves_like "falls back to a dummy model"
+
+    with_dummy_rake do
+      it "warns that the unique index was missing" do
+        expect(model.logger)
+          .to have_received(:warn)
+                .with(a_string_matching(/missing unique index/))
+      end
+    end
   end
 
   context "with an empty constants array" do
