@@ -293,14 +293,14 @@ module PersistentEnum
 
         if model.const_defined?(constant_name, false)
           existing_value = model.const_get(constant_name, false)
-          if existing_value.read_attribute(name_attr) != value.read_attribute(name_attr)
+          if existing_value.is_a?(AbstractDummyModel) ||
+             existing_value.read_attribute(name_attr) != value.read_attribute(name_attr)
+          then
             # Replace with new value
             model.send(:remove_const, constant_name)
             model.const_set(constant_name, value)
           elsif existing_value.attributes != value.attributes
-            existing_value.attributes = value.attributes
-            existing_value.clear_changes_information
-            existing_value
+            existing_value.reload.freeze
           else
             existing_value
           end
