@@ -397,13 +397,16 @@ RSpec.describe PersistentEnum, :database do
         end
 
         it "handles a change in an attribute" do
-          model.where(name: "One").update_all(count: 10)
-          old_constant = model.const_get(:ONE).reload
-          expect(old_constant.count).to eq(10)
+          old_constant = model.const_get(:ONE)
 
-          model.reinitialize_acts_as_enum
+          state = model._acts_as_enum_state
+          model.initialize_acts_as_enum(
+            state.required_members.merge({ "One" => { count: 1111 } }),
+            state.name_attr,
+            state.sql_enum_type)
+
           new_constant = model.const_get(:ONE)
-          expect(new_constant.count).to eq(1)
+          expect(new_constant.count).to eq(1111)
           expect(new_constant).to equal(old_constant)
           expect(new_constant).to equal(model.value_of("One"))
         end
