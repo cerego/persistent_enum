@@ -170,7 +170,7 @@ module PersistentEnum
       table_attributes = (model.attribute_names - internal_attributes)
 
       # If not otherwise specified, only attributes without defaults are required
-      required_attributes ||= model.column_defaults.map { |attr, default| attr if default.nil? }.compact - internal_attributes
+      required_attributes ||= model.columns.map { |col| col.name if !col.null && col.default.nil? }.compact - internal_attributes
 
       unless (unknown_attributes = (required_attributes - table_attributes)).blank?
         log_warning("PersistentEnum error: required attributes #{unknown_attrs.inspect} for model #{model.name} not found in table - ignoring.")
@@ -238,18 +238,19 @@ module PersistentEnum
 
         case model.connection.adapter_name
         when 'PostgreSQL'
-          model.import(rows, on_duplicate_key_update: { conflict_target: [name_attr], columns: upsert_columns })
+          model.import!(rows, on_duplicate_key_update: { conflict_target: [name_attr], columns: upsert_columns })
         when 'Mysql2'
           if upsert_columns.present?
-            model.import(rows, on_duplicate_key_update: upsert_columns)
+            model.import!(rows, on_duplicate_key_update: upsert_columns)
           else
-            model.import(rows, on_duplicate_key_ignore: true)
+            model.import!(rows, on_duplicate_key_ignore: true)
           end
         else
           # No upsert support: use first_or_create optimistically
           rows.each do |row|
             record = model.lock.where(name_attr => row[name_attr]).first_or_create!(row.except('id', name_attr))
             record.assign_attributes(row)
+            record.validate!
             record.save! if record.changed?
           end
         end
