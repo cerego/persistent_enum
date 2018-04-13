@@ -238,18 +238,19 @@ module PersistentEnum
 
         case model.connection.adapter_name
         when 'PostgreSQL'
-          model.import(rows, on_duplicate_key_update: { conflict_target: [name_attr], columns: upsert_columns })
+          model.import!(rows, on_duplicate_key_update: { conflict_target: [name_attr], columns: upsert_columns })
         when 'Mysql2'
           if upsert_columns.present?
-            model.import(rows, on_duplicate_key_update: upsert_columns)
+            model.import!(rows, on_duplicate_key_update: upsert_columns)
           else
-            model.import(rows, on_duplicate_key_ignore: true)
+            model.import!(rows, on_duplicate_key_ignore: true)
           end
         else
           # No upsert support: use first_or_create optimistically
           rows.each do |row|
             record = model.lock.where(name_attr => row[name_attr]).first_or_create!(row.except('id', name_attr))
             record.assign_attributes(row)
+            record.validate!
             record.save! if record.changed?
           end
         end

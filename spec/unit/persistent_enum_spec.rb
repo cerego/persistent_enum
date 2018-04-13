@@ -146,6 +146,34 @@ RSpec.describe PersistentEnum, :database do
     end
   end
 
+  context "with a validation on the model" do
+    let(:model) do
+      create_test_model(:with_table, ->(t) { t.string :name; t.index [:name], unique: true }) do
+        yield if block_given?
+        validates :name, exclusion: { in: [CONSTANTS.first.to_s] }
+        acts_as_enum(CONSTANTS)
+      end
+    end
+
+    it "does not admit invalid values" do
+      expect { model }
+        .to raise_error(ActiveRecord::RecordInvalid)
+    end
+
+    context "with existing invalid values" do
+      let(:model) do
+        super() do
+          create(name: CONSTANTS.first.to_s)
+        end
+      end
+
+      it "does not admit invalid values" do
+        expect { model }
+          .to raise_error(ActiveRecord::RecordInvalid)
+      end
+    end
+  end
+
   def self.with_dummy_rake(&block)
     context "with rake defined" do
       around(:each) do |example|
