@@ -8,12 +8,11 @@ module PersistentEnum
     extend ActiveSupport::Concern
 
     class State
-      attr_reader :required_members, :name_attr, :sql_enum_type, :by_name, :by_name_insensitive, :by_ordinal, :required_by_ordinal
+      attr_reader :enum_spec, :by_name, :by_name_insensitive, :by_ordinal, :required_by_ordinal
+      delegate :required_members, :name_attr, :sql_enum_type, to: :enum_spec
 
-      def initialize(required_members, name_attr, sql_enum_type, enum_values, required_enum_constants)
-        @required_members    = required_members.freeze
-        @name_attr           = name_attr
-        @sql_enum_type       = sql_enum_type
+      def initialize(enum_spec, enum_values, required_enum_constants)
+        @enum_spec = enum_spec
 
         enum_values.each do |val|
           val.attributes.each_value { |attr| attr.freeze }
@@ -23,12 +22,12 @@ module PersistentEnum
         @by_ordinal = enum_values.index_by(&:ordinal).freeze
 
         @by_name    = enum_values
-                        .index_by { |v| v.read_attribute(name_attr) }
+                        .index_by { |v| v.read_attribute(enum_spec.name_attr) }
                         .with_indifferent_access
                         .freeze
 
         @by_name_insensitive = enum_values
-                                 .index_by { |v| v.read_attribute(name_attr).downcase }
+                                 .index_by { |v| v.read_attribute(enum_spec.name_attr).downcase }
                                  .with_indifferent_access
                                  .freeze
 
@@ -54,7 +53,7 @@ module PersistentEnum
         nil
       end
 
-      def initialize_acts_as_enum(required_members, name_attr, sql_enum_type)
+      def initialize_acts_as_enum(enum_spec)
         prev_state = _acts_as_enum_state
 
         singleton_class.class_eval do
@@ -63,8 +62,13 @@ module PersistentEnum
 
         ActsAsEnum.register_acts_as_enum(self) if prev_state.nil?
 
-        required_values = PersistentEnum.cache_constants(self, required_members, name_attr: name_attr, sql_enum_type: sql_enum_type)
-        required_enum_constants = required_values.map { |val| val.read_attribute(name_attr) }
+        required_values = PersistentEnum.cache_constants(
+          self,
+          enum_spec.required_members,
+          name_attr:     enum_spec.name_attr,
+          sql_enum_type: enum_spec.sql_enum_type)
+
+        required_enum_constants = required_values.map { |val| val.read_attribute(enum_spec.name_attr) }
 
         # Now we've ensured that our required constants are present, load the rest
         # of the enum from the database (if present)
@@ -83,7 +87,7 @@ module PersistentEnum
           end
         end
 
-        state = State.new(required_members, name_attr, sql_enum_type, all_values, required_enum_constants)
+        state = State.new(enum_spec, all_values, required_enum_constants)
 
         singleton_class.class_eval do
           define_method(:_acts_as_enum_state) { state }
@@ -95,7 +99,7 @@ module PersistentEnum
       def reinitialize_acts_as_enum
         current_state = _acts_as_enum_state
         raise "Cannot refresh acts_as_enum type #{self.name}: not already initialized!" if current_state.nil?
-        initialize_acts_as_enum(current_state.required_members, current_state.name_attr, current_state.sql_enum_type)
+        initialize_acts_as_enum(current_state.enum_spec)
       end
 
       def dummy_class

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+
 require "persistent_enum/version"
 require "persistent_enum/acts_as_enum"
 
@@ -18,19 +19,8 @@ module PersistentEnum
   module ClassMethods
     def acts_as_enum(required_constants, name_attr: :name, sql_enum_type: nil, &constant_init_block)
       include ActsAsEnum
-
-      if block_given?
-        unless required_constants.blank?
-          raise ArgumentError.new("Constants may not be provided both by argument and builder block")
-        end
-        required_constants = ConstantEvaluator.new.evaluate(&constant_init_block)
-
-        unless required_constants.present?
-          raise ArgumentError.new("No enum constants specified")
-        end
-      end
-
-      initialize_acts_as_enum(required_constants, name_attr, sql_enum_type)
+      enum_spec = EnumSpec.new(constant_init_block, required_constants, name_attr, sql_enum_type)
+      initialize_acts_as_enum(enum_spec)
     end
 
     # Sets up a association with an enumeration record type. Key resolution is
@@ -60,26 +50,45 @@ module PersistentEnum
       end
 
       # All enum members must be valid
-      validates foreign_key, inclusion: { in: ->(r){ target_class.all_ordinals } }, allow_nil: true
+      validates foreign_key, inclusion: { in: ->(_r) { target_class.all_ordinals } }, allow_nil: true
 
       # New enum members must be currently active
-      validates foreign_key, inclusion: { in: ->(r){ target_class.ordinals } }, allow_nil: true, on: :create
+      validates foreign_key, inclusion: { in: ->(_r) { target_class.ordinals } }, allow_nil: true, on: :create
     end
   end
 
-  class ConstantEvaluator
-    def evaluate(&block)
-      @constants = {}
-      self.instance_eval(&block)
-      @constants
+  # Closes over the arguments to `acts_as_enum` so that it can be reloaded.
+  EnumSpec = Struct.new(:constant_block, :constant_hash, :name_attr, :sql_enum_type) do
+    def initialize(constant_block, constant_hash, name_attr, sql_enum_type)
+      unless constant_block.nil? ^ constant_hash.nil?
+        raise ArgumentError.new("Constants must be provided by exactly one of hash argument or builder block")
+      end
+      super(constant_block, constant_hash, name_attr.to_s, sql_enum_type)
+      freeze
     end
 
-    def constant!(name, **args)
-      @constants[name] = args
+    def required_members
+      constant_hash || ConstantEvaluator.new.evaluate(&constant_block)
     end
 
-    def method_missing(name, **args)
-      constant!(name, **args)
+    class ConstantEvaluator
+      def evaluate(&block)
+        @constants = {}
+        self.instance_eval(&block)
+        @constants
+      end
+
+      def constant!(name, **args)
+        @constants[name] = args
+      end
+
+      def method_missing(name, **args)
+        constant!(name, **args)
+      end
+
+      def respond_to_missing?(_name, _include_all = true)
+        true
+      end
     end
   end
 
