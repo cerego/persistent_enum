@@ -428,10 +428,13 @@ RSpec.describe PersistentEnum, :database do
           old_constant = model.const_get(:ONE)
 
           state = model._acts_as_enum_state
-          model.initialize_acts_as_enum(
-            state.required_members.merge({ "One" => { count: 1111 } }),
-            state.name_attr,
-            state.sql_enum_type)
+          new_spec =
+            PersistentEnum::EnumSpec.new(
+              nil,
+              state.required_members.merge({ "One" => { count: 1111 } }),
+              state.name_attr,
+              state.sql_enum_type)
+          model.initialize_acts_as_enum(new_spec)
 
           new_constant = model.const_get(:ONE)
           expect(new_constant.count).to eq(1111)
@@ -457,7 +460,7 @@ RSpec.describe PersistentEnum, :database do
     context "using builder interface" do
       let(:model) do
         create_test_model(:with_extra_field_using_builder, ->(t) { t.string :name; t.integer :count; t.index [:name], unique: true }) do
-          acts_as_enum([]) do
+          acts_as_enum(nil) do
             One(count: 1)
             Two(count: 2)
             constant!(:Three, count: 3)
@@ -468,6 +471,23 @@ RSpec.describe PersistentEnum, :database do
 
       it_behaves_like "acts like a persisted enum"
       it_behaves_like "acts like a persisted enum with extra fields"
+    end
+
+    context "with closed over builder" do
+      let(:model) do
+        v = 0
+        create_test_model(:with_dynamic_builder, ->(t) { t.string :name; t.integer :count; t.index [:name], unique: true }) do
+          acts_as_enum(nil) do
+            Member(count: (v += 1))
+          end
+        end
+      end
+
+      it "can reinitialize with a changed value" do
+        expect(model.value_of("Member").count).to eq(1)
+        model.reinitialize_acts_as_enum
+        expect(model.value_of("Member").count).to eq(2)
+      end
     end
 
     context "without table" do
@@ -512,7 +532,7 @@ RSpec.describe PersistentEnum, :database do
                             t.integer :maybe
                             t.index [:name], unique: true
                           }) do
-          acts_as_enum([]) do
+          acts_as_enum(nil) do
             One()
             Two(count: 2)
             Three(maybe: 1)
