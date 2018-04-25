@@ -473,6 +473,23 @@ RSpec.describe PersistentEnum, :database do
       it_behaves_like "acts like a persisted enum with extra fields"
     end
 
+    context "with closed over builder" do
+      let(:model) do
+        v = 0
+        create_test_model(:with_dynamic_builder, ->(t) { t.string :name; t.integer :count; t.index [:name], unique: true }) do
+          acts_as_enum(nil) do
+            Member(count: (v += 1))
+          end
+        end
+      end
+
+      it "can reinitialize with a changed value" do
+        expect(model.value_of("Member").count).to eq(1)
+        model.reinitialize_acts_as_enum
+        expect(model.value_of("Member").count).to eq(2)
+      end
+    end
+
     context "without table" do
       let(:model) do
         members = members()
