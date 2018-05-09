@@ -525,13 +525,16 @@ RSpec.describe PersistentEnum, :database do
     end
 
     context "with attributes with defaults" do
+      let(:prepopulate) { nil }
       let(:model) do
+        pp = prepopulate
         create_test_model(:test_invalid_args_b, ->(t) {
                             t.string :name
                             t.integer :count, default: 1, null: false
                             t.integer :maybe
                             t.index [:name], unique: true
                           }) do
+          pp&.call(self)
           acts_as_enum(nil) do
             One()
             Two(count: 2)
@@ -555,6 +558,21 @@ RSpec.describe PersistentEnum, :database do
         expect(r).to be_present
         expect(r.count).to eq(1)
         expect(r.maybe).to eq(1)
+      end
+
+      context "with non-default existing values" do
+        let(:prepopulate) do
+          ->(table) do
+            table.create!(name: "One", count: 10, maybe: 10)
+          end
+        end
+
+        it "asserts the defaults when omitted" do
+          o = model.value_of("One")
+          expect(o).to be_present
+          expect(o.count).to eq(1)
+          expect(o.maybe).to eq(nil)
+        end
       end
     end
 
