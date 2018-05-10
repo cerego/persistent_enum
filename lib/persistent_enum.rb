@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# frozen_string_literal: true
 
 require "persistent_enum/version"
 require "persistent_enum/acts_as_enum"
@@ -178,8 +178,11 @@ module PersistentEnum
       internal_attributes = ["id", name_attr]
       table_attributes = (model.attribute_names - internal_attributes)
 
-      # If not otherwise specified, only attributes without defaults are required
-      required_attributes ||= model.columns.map { |col| col.name if !col.null && col.default.nil? }.compact - internal_attributes
+      # If not otherwise specified, non-null attributes without defaults are required
+      optional_attributes = model.columns.select { |col| col.null || !col.default.nil? }.map(&:name) - internal_attributes
+      required_attributes ||= table_attributes - optional_attributes
+
+      column_defaults = model.columns.each_with_object({}) { |col, h| h[col.name] = col.default }
 
       unless (unknown_attributes = (required_attributes - table_attributes)).blank?
         log_warning("PersistentEnum error: required attributes #{unknown_attrs.inspect} for model #{model.name} not found in table - ignoring.")
@@ -218,8 +221,12 @@ module PersistentEnum
           raise EnumTableInvalid.new("enum member error: required attributes #{missing_attrs.inspect} not provided")
         end
 
-        new_attrs = attrs.merge(name_attr => name)
+        new_attrs = attrs.dup
+        new_attrs[name_attr] = name
         new_attrs["id"] = name if sql_enum_type
+        (optional_attributes - attr_names).each do |default_attr|
+          new_attrs[default_attr] = column_defaults[default_attr]
+        end
         new_attrs
       end
 
