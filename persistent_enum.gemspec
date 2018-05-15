@@ -18,8 +18,8 @@ Gem::Specification.new do |spec|
   spec.test_files    = spec.files.grep(%r{^(test|spec|features)/})
   spec.require_paths = ["lib"]
 
-  spec.add_dependency "activerecord", ">= 5.0.0", "< 5.2"
-  spec.add_dependency "activesupport", ">= 5.0.0", "< 5.2"
+  spec.add_dependency "activerecord", "~> 5.0"
+  spec.add_dependency "activesupport", "~> 5.0"
 
   spec.add_dependency "activerecord-import"
 
@@ -30,7 +30,7 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "appraisal"
   spec.add_development_dependency "mysql2"
   spec.add_development_dependency "sqlite3"
-  spec.add_development_dependency "pg", "~> 0.18" # As of 5.1.4, Rails runtime check excludes pg 1.x, see #31669
+  spec.add_development_dependency "pg"
 
   spec.add_development_dependency "byebug"
 end

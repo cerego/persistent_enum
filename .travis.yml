@@ -6,8 +6,8 @@ rvm:
   - 2.4
   - 2.5
 gemfile:
-  - gemfiles/rails_5_0.gemfile
   - gemfiles/rails_5_1.gemfile
+  - gemfiles/rails_5_2.gemfile
 env:
   - TEST_DATABASE_ENVIRONMENT=postgresql
   - TEST_DATABASE_ENVIRONMENT=mysql2
