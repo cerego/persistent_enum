@@ -73,8 +73,12 @@ module PersistentEnum
         # Now we've ensured that our required constants are present, load the rest
         # of the enum from the database (if present)
         all_values = required_values.dup
-        if table_exists?
-          all_values.concat(unscoped { where.not(id: required_values) })
+        begin
+          if table_exists?
+            all_values.concat(unscoped { where.not(id: required_values) })
+          end
+        rescue ActiveRecord::NoDatabaseError
+          # Nothing additional to cache.
         end
 
         # Normalize values: If we already have a equal value in the previous

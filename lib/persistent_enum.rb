@@ -148,11 +148,15 @@ module PersistentEnum
     # Given an 'enum-like' table with (id, name, ...) structure, load existing
     # records from the database and cache them in constants on this class
     def cache_records(model, name_attr: :name)
-      if model.table_exists?
-        values = model.scoped
-        cache_values(model, values, name_attr)
-      else
-        puts "Database table for model #{model.name} doesn't exist, no constants cached."
+      begin
+        if model.table_exists?
+          values = model.scoped
+          cache_values(model, values, name_attr)
+        else
+          puts "Database table for model #{model.name} doesn't exist, no constants cached."
+        end
+      rescue ActiveRecord::NoDatabaseError
+        puts "Database for model #{model.name} doesn't exist, no constants cached."
       end
     end
 
@@ -171,8 +175,12 @@ module PersistentEnum
     private
 
     def cache_constants_in_table(model, name_attr, required_members, required_attributes, sql_enum_type)
-      unless model.table_exists?
-        raise EnumTableInvalid.new("Database table for model #{model.name} doesn't exist")
+      begin
+        unless model.table_exists?
+          raise EnumTableInvalid.new("Database table for model #{model.name} doesn't exist")
+        end
+      rescue ActiveRecord::NoDatabaseError
+        raise EnumTableInvalid.new("Database for model #{model.name} doesn't exist")
       end
 
       internal_attributes = ["id", name_attr]
