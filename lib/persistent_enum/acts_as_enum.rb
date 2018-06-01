@@ -56,8 +56,10 @@ module PersistentEnum
       def initialize_acts_as_enum(enum_spec)
         prev_state = _acts_as_enum_state
 
-        singleton_class.class_eval do
-          remove_method(:_acts_as_enum_state) if self.methods(false).include?(:_acts_as_enum_state)
+        if self.methods(false).include?(:_acts_as_enum_state)
+          singleton_class.class_eval do
+            remove_method(:_acts_as_enum_state)
+          end
         end
 
         ActsAsEnum.register_acts_as_enum(self) if prev_state.nil?

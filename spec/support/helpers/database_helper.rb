@@ -3,7 +3,7 @@ require 'active_record'
 
 module DatabaseHelper
   def self.db_env
-    ENV.fetch('TEST_DATABASE_ENVIROMENT', 'postgresql')
+    ENV.fetch('TEST_DATABASE_ENVIRONMENT', 'postgresql')
   end
 
   def self.initialize_database

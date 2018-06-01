@@ -443,10 +443,10 @@ RSpec.describe PersistentEnum, :database do
         end
 
         it "handles a change in enum constant by replacing" do
-          model.where(name: "One").update_all(name: "oNe")
+          model.where(name: "One").update_all(name: "MoreThanOne")
           old_constant = model.const_get(:ONE).reload
           # Note this has completely broken the enum indexing. Not relevant to test.
-          expect(old_constant.name).to eq("oNe")
+          expect(old_constant.name).to eq("MoreThanOne")
 
           model.reinitialize_acts_as_enum
           new_constant = model.const_get(:ONE)
