@@ -184,7 +184,7 @@ module PersistentEnum
       end
 
       internal_attributes = ["id", name_attr]
-      table_attributes = (model.attribute_names - internal_attributes)
+      table_attributes = (model.column_names - internal_attributes)
 
       # If not otherwise specified, non-null attributes without defaults are required
       optional_attributes = model.columns.select { |col| col.null || !col.default.nil? }.map(&:name) - internal_attributes
