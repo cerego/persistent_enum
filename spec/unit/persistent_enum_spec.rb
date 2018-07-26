@@ -351,18 +351,25 @@ RSpec.describe PersistentEnum, :database do
   end
 
   context "with extra fields" do
+    let(:fields) {
+      [:count]
+    }
+    let(:defaults) do
+      { count: 4 }
+    end
+
     let(:members) do
       {
         :One   => { count: 1 },
         :Two   => { count: 2 },
         :Three => { count: 3 },
-        :Four  => { count: 4 }
+        :Four  => {},
       }
     end
 
     shared_examples "acts like an enum with extra fields" do
       it "has all expected members with expected values" do
-        members.each do |name, fields|
+        members.each do |name, member_fields|
           ev = model.value_of(name)
 
           # Ensure it exists and is correctly saved
@@ -377,8 +384,10 @@ RSpec.describe PersistentEnum, :database do
           end
 
           # and that fields have been correctly set
-          fields.each do |fname, fvalue|
-            expect(ev[fname]).to eq(fvalue)
+          fields.each do |field|
+            expected =
+              member_fields.fetch(field) { defaults[field] if model.table_exists? }
+            expect(ev[field]).to eq(expected)
           end
         end
       end
@@ -391,7 +400,11 @@ RSpec.describe PersistentEnum, :database do
     context "providing a hash" do
       let(:model) do
         members = members()
-        create_test_model(:with_extra_field, ->(t) { t.string :name; t.integer :count; t.index [:name], unique: true }) do
+        create_test_model(:with_extra_field, ->(t) {
+                            t.string :name
+                            t.integer :count, default: 4
+                            t.index [:name], unique: true
+                          }) do
           # pre-existing matching, non-matching, and outdated data
           create(name: "One", count: 3)
           create(name: "Two", count: 2)
@@ -583,6 +596,44 @@ RSpec.describe PersistentEnum, :database do
       expect(ActiveRecord::Base.logger)
         .to have_received(:warn)
         .with(a_string_matching(/missing from table/))
+    end
+
+    context 'with array typed extra fields', :postgresql do
+      let(:fields) {
+        [:counts]
+      }
+
+      let(:defaults) do
+        { counts: [4, 40] }
+      end
+
+      let(:members) do
+        {
+          :One   => { counts: [1, 10] },
+          :Two   => { counts: [2, 20] },
+          :Three => { counts: [3, 30] },
+          :Four  => {},
+        }
+      end
+
+      let(:model) do
+        members = members()
+        create_test_model(:with_extra_array_field, ->(t) {
+                            t.string :name;
+                            t.column :counts, 'integer[]', default: '{4, 40}'
+                            t.index [:name], unique: true
+                          }) do
+          # pre-existing matching, non-matching, and outdated data
+          create(name: 'One', counts: [3])
+          create(name: 'Two', counts: [2])
+          create(name: 'Zero', counts: [0])
+
+          acts_as_enum(members)
+        end
+      end
+
+      it_behaves_like 'acts like a persisted enum'
+      it_behaves_like 'acts like a persisted enum with extra fields'
     end
   end
 

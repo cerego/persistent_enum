@@ -190,7 +190,7 @@ module PersistentEnum
       optional_attributes = model.columns.select { |col| col.null || !col.default.nil? }.map(&:name) - internal_attributes
       required_attributes ||= table_attributes - optional_attributes
 
-      column_defaults = model.columns.each_with_object({}) { |col, h| h[col.name] = col.default }
+      column_defaults = model.column_defaults
 
       unless (unknown_attributes = (required_attributes - table_attributes)).blank?
         log_warning("PersistentEnum error: required attributes #{unknown_attrs.inspect} for model #{model.name} not found in table - ignoring.")
