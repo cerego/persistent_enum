@@ -245,7 +245,7 @@ module PersistentEnum
       end
     end
 
-    def cache_constants_in_dummy_class(model, name_attr, required_members, required_attributes, sql_enum_type)
+    def cache_constants_in_dummy_class(model, name_attr, required_members, _required_attributes, sql_enum_type)
       dummyclass = build_dummy_class(model, name_attr)
 
       next_id = 999999999

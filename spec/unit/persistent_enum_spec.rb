@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# rubocop:disable Performance/HashEachMethods, Style/Semicolon, Lint/MissingCopEnableDirective
+# rubocop:disable Style/Semicolon, Lint/MissingCopEnableDirective
 
 require 'persistent_enum'
 require 'byebug'
