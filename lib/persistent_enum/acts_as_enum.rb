@@ -191,12 +191,12 @@ module PersistentEnum
     end
 
     class << self
-      KNOWN_ENUMERATIONS = {}
+      @@known_enumerations = {}
       LOCK = Monitor.new
 
       def register_acts_as_enum(clazz)
         LOCK.synchronize do
-          KNOWN_ENUMERATIONS[clazz.name] = clazz
+          @@known_enumerations[clazz.name] = clazz
         end
       end
 
@@ -204,18 +204,18 @@ module PersistentEnum
       # may have changed (e.g. fixture loading).
       def reinitialize_enumerations
         LOCK.synchronize do
-          KNOWN_ENUMERATIONS.each_value do |clazz|
+          @@known_enumerations.each_value do |clazz|
             clazz.reinitialize_acts_as_enum
           end
         end
       end
 
-      # Ensure that all KNOWN_ENUMERATIONS are loaded by resolving each name
+      # Ensure that all known_enumerations are loaded by resolving each name
       # constant and reregistering the resulting class. Raises NameError if a
       # previously-encountered type cannot be resolved.
       def rerequire_known_enumerations
         LOCK.synchronize do
-          KNOWN_ENUMERATIONS.keys.each do |name|
+          @@known_enumerations.keys.each do |name|
             new_clazz = name.safe_constantize
             unless new_clazz.is_a?(Class)
               raise NameError.new("Could not resolve ActsAsEnum type '#{name}' after reload")
