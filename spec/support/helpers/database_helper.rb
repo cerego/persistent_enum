@@ -9,10 +9,10 @@ module DatabaseHelper
   def self.initialize_database
     db_config_path = File.join(File.dirname(__FILE__), '../config/database.yml')
     db_config = YAML.safe_load(File.open(db_config_path))
-    raise "Test database configuration missing" unless db_config[db_env]
+    raise 'Test database configuration missing' unless db_config[db_env]
     ActiveRecord::Base.establish_connection(db_config[db_env])
 
-    if ENV["DEBUG"]
+    if ENV['DEBUG']
       ActiveRecord::Base.logger = Logger.new(STDERR)
       ActiveRecord::Base.logger.level = Logger::DEBUG
     end

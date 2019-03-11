@@ -1,12 +1,12 @@
 # frozen_string_literal: true
 
-require "persistent_enum/version"
-require "persistent_enum/acts_as_enum"
+require 'persistent_enum/version'
+require 'persistent_enum/acts_as_enum'
 
-require "active_support"
-require "active_support/inflector"
-require "active_record"
-require "activerecord-import"
+require 'active_support'
+require 'active_support/inflector'
+require 'active_record'
+require 'activerecord-import'
 
 # Provide a database-backed enumeration between indices and symbolic
 # values. This allows us to have a valid foreign key which behaves like a
@@ -61,7 +61,7 @@ module PersistentEnum
   EnumSpec = Struct.new(:constant_block, :constant_hash, :name_attr, :sql_enum_type) do
     def initialize(constant_block, constant_hash, name_attr, sql_enum_type)
       unless constant_block.nil? ^ constant_hash.nil?
-        raise ArgumentError.new("Constants must be provided by exactly one of hash argument or builder block")
+        raise ArgumentError.new('Constants must be provided by exactly one of hash argument or builder block')
       end
       super(constant_block, constant_hash, name_attr.to_s, sql_enum_type)
       freeze
@@ -104,7 +104,7 @@ module PersistentEnum
     # by name using `ALTER TYPE` before insertion. This ensures that enum table
     # ids will have predictable values and can therefore be used in database
     # level constraints.
-    def cache_constants(model, required_members, name_attr: "name", required_attributes: nil, sql_enum_type: nil)
+    def cache_constants(model, required_members, name_attr: 'name', required_attributes: nil, sql_enum_type: nil)
       # normalize member specification
       unless required_members.is_a?(Hash)
         required_members = required_members.each_with_object({}) { |c, h| h[c] = {} }
@@ -137,7 +137,7 @@ module PersistentEnum
           # application to be initialized enough to run the Rake task (e.g.
           # db:migrate).
           log_warning("Database table initialization error for model #{model.name}, "\
-                      "initializing constants with dummy records instead: " +
+                      'initializing constants with dummy records instead: ' +
                       ex.message)
           cache_constants_in_dummy_class(model, name_attr, required_members, required_attributes, sql_enum_type)
         end
@@ -183,7 +183,7 @@ module PersistentEnum
         raise EnumTableInvalid.new("Database for model #{model.name} doesn't exist")
       end
 
-      internal_attributes = ["id", name_attr]
+      internal_attributes = ['id', name_attr]
       table_attributes = (model.column_names - internal_attributes)
 
       # If not otherwise specified, non-null attributes without defaults are required
@@ -231,7 +231,7 @@ module PersistentEnum
 
         new_attrs = attrs.dup
         new_attrs[name_attr] = name
-        new_attrs["id"] = name if sql_enum_type
+        new_attrs['id'] = name if sql_enum_type
         (optional_attributes - attr_names).each do |default_attr|
           new_attrs[default_attr] = column_defaults[default_attr]
         end
@@ -373,7 +373,7 @@ module PersistentEnum
 
       def read_attribute(attr)
         case attr.to_s
-        when "id"
+        when 'id'
           ordinal
         when self.class.name_attr.to_s
           enum_constant
