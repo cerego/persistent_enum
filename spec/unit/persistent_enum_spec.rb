@@ -330,7 +330,7 @@ RSpec.describe PersistentEnum, :database do
         'CamelCase'             => 'CAMEL_CASE',
         :Symbolic               => 'SYMBOLIC',
         'with.punctuation'      => 'WITH_PUNCTUATION',
-        'multiple_.underscores' => 'MULTIPLE_UNDERSCORES'
+        'multiple_.underscores' => 'MULTIPLE_UNDERSCORES',
       }
     end
 

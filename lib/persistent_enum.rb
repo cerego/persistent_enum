@@ -148,7 +148,7 @@ module PersistentEnum
     # Given an 'enum-like' table with (id, name, ...) structure, load existing
     # records from the database and cache them in constants on this class
     def cache_records(model, name_attr: :name)
-      begin
+      
         if model.table_exists?
           values = model.scoped
           cache_values(model, values, name_attr)
@@ -157,7 +157,7 @@ module PersistentEnum
         end
       rescue ActiveRecord::NoDatabaseError
         puts "Database for model #{model.name} doesn't exist, no constants cached."
-      end
+      
     end
 
     def dummy_class(model, name_attr)
