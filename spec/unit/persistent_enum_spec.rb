@@ -401,10 +401,10 @@ RSpec.describe PersistentEnum, :database do
       let(:model) do
         members = members()
         create_test_model(:with_extra_field, ->(t) {
-                            t.string :name
-                            t.integer :count, default: 4
-                            t.index [:name], unique: true
-                          }) do
+                                               t.string :name
+                                               t.integer :count, default: 4
+                                               t.index [:name], unique: true
+                                             }) do
           # pre-existing matching, non-matching, and outdated data
           create(name: 'One', count: 3)
           create(name: 'Two', count: 2)
@@ -543,11 +543,11 @@ RSpec.describe PersistentEnum, :database do
       let(:model) do
         pp_handle = method(:prepopulate)
         create_test_model(:test_invalid_args_b, ->(t) {
-                            t.string :name
-                            t.integer :count, default: 1, null: false
-                            t.integer :maybe
-                            t.index [:name], unique: true
-                          }) do
+                                                  t.string :name
+                                                  t.integer :count, default: 1, null: false
+                                                  t.integer :maybe
+                                                  t.index [:name], unique: true
+                                                }) do
           pp_handle.call(self)
           acts_as_enum(nil) do
             One()
@@ -619,10 +619,10 @@ RSpec.describe PersistentEnum, :database do
       let(:model) do
         members = members()
         create_test_model(:with_extra_array_field, ->(t) {
-                            t.string :name;
-                            t.column :counts, 'integer[]', default: '{4, 40}'
-                            t.index [:name], unique: true
-                          }) do
+                                                     t.string :name;
+                                                     t.column :counts, 'integer[]', default: '{4, 40}'
+                                                     t.index [:name], unique: true
+                                                   }) do
           # pre-existing matching, non-matching, and outdated data
           create(name: 'One', counts: [3])
           create(name: 'Two', counts: [2])

@@ -44,6 +44,7 @@ module PersistentEnum
              else
                m = target_class.value_of(enum_member)
                raise NameError.new("#{target_class}: Invalid enum constant '#{enum_member}'") if m.nil?
+
                m.ordinal
              end
         write_attribute(foreign_key, id)
@@ -63,6 +64,7 @@ module PersistentEnum
       unless constant_block.nil? ^ constant_hash.nil?
         raise ArgumentError.new('Constants must be provided by exactly one of hash argument or builder block')
       end
+
       super(constant_block, constant_hash, name_attr.to_s, sql_enum_type)
       freeze
     end
@@ -148,16 +150,14 @@ module PersistentEnum
     # Given an 'enum-like' table with (id, name, ...) structure, load existing
     # records from the database and cache them in constants on this class
     def cache_records(model, name_attr: :name)
-      
-        if model.table_exists?
-          values = model.scoped
-          cache_values(model, values, name_attr)
-        else
-          puts "Database table for model #{model.name} doesn't exist, no constants cached."
-        end
-      rescue ActiveRecord::NoDatabaseError
-        puts "Database for model #{model.name} doesn't exist, no constants cached."
-      
+      if model.table_exists?
+        values = model.scoped
+        cache_values(model, values, name_attr)
+      else
+        puts "Database table for model #{model.name} doesn't exist, no constants cached."
+      end
+    rescue ActiveRecord::NoDatabaseError
+      puts "Database for model #{model.name} doesn't exist, no constants cached."
     end
 
     def dummy_class(model, name_attr)
@@ -166,6 +166,7 @@ module PersistentEnum
         unless dummy_class.superclass == AbstractDummyModel && dummy_class.name_attr == name_attr
           raise NameError.new("PersistentEnum dummy class type mismatch: '#{dummy_class.inspect}' does not match '#{model.name}'")
         end
+
         dummy_class
       else
         nil
@@ -300,9 +301,9 @@ module PersistentEnum
         connection.execute("SELECT pg_advisory_lock(#{ENUM_TYPE_LOCK_KEY})")
 
         quoted_type = connection.quote_table_name(sql_enum_type)
-        current_members = connection.select_values(<<-SQL)
-        SELECT unnest(enum_range(null::#{quoted_type}, null::#{quoted_type}));
-      SQL
+        current_members = connection.select_values(<<~SQL)
+          SELECT unnest(enum_range(null::#{quoted_type}, null::#{quoted_type}));
+        SQL
 
         (names - current_members).each do |name|
           connection.execute("ALTER TYPE #{quoted_type} ADD VALUE #{connection.quote(name)}")
@@ -341,6 +342,7 @@ module PersistentEnum
     def constant_name(member_name)
       value = member_name.strip.gsub(/[^\w\s-]/, '_').underscore
       return nil if value.blank?
+
       value.gsub!(/\s+/, '_')
       value.gsub!(/_{2,}/, '_')
       value.upcase!
@@ -389,6 +391,7 @@ module PersistentEnum
           unless args.empty?
             raise ArgumentError.new("wrong number of arguments (#{args.size} for 0)")
           end
+
           attributes[meth]
         else
           super

@@ -12,6 +12,7 @@ module DatabaseHelper
     db_config_path = File.join(File.dirname(__FILE__), '../config/database.yml')
     db_config = YAML.safe_load(File.open(db_config_path))
     raise 'Test database configuration missing' unless db_config[db_env]
+
     ActiveRecord::Base.establish_connection(db_config[db_env])
 
     if ENV['DEBUG']

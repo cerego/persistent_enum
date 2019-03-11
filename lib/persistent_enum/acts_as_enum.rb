@@ -105,6 +105,7 @@ module PersistentEnum
       def reinitialize_acts_as_enum
         current_state = _acts_as_enum_state
         raise "Cannot refresh acts_as_enum type #{self.name}: not already initialized!" if current_state.nil?
+
         initialize_acts_as_enum(current_state.enum_spec)
       end
 
@@ -121,6 +122,7 @@ module PersistentEnum
           unless _acts_as_enum_state.insensitive_lookup?
             raise RuntimeError.new("#{self.name} constants are case-dependent: cannot perform case-insensitive lookup")
           end
+
           _acts_as_enum_state.by_name_insensitive[name.downcase]
         else
           _acts_as_enum_state.by_name[name]
@@ -130,6 +132,7 @@ module PersistentEnum
       def value_of!(name, insensitive: false)
         v = value_of(name, insensitive: insensitive)
         raise NameError.new("#{self}: Invalid member '#{name}'") unless v.present?
+
         v
       end
 
@@ -182,7 +185,6 @@ module PersistentEnum
       read_attribute(:id)
     end
 
-
     # Is this enum member still present in the enum declaration?
     def active?
       self.class.active?(self)
@@ -218,6 +220,7 @@ module PersistentEnum
             unless new_clazz.is_a?(Class)
               raise NameError.new("Could not resolve ActsAsEnum type '#{name}' after reload")
             end
+
             register_acts_as_enum(new_clazz)
           end
         end
