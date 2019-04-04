@@ -1,12 +1,12 @@
 # frozen_string_literal: true
 
-require "persistent_enum/version"
-require "persistent_enum/acts_as_enum"
+require 'persistent_enum/version'
+require 'persistent_enum/acts_as_enum'
 
-require "active_support"
-require "active_support/inflector"
-require "active_record"
-require "activerecord-import"
+require 'active_support'
+require 'active_support/inflector'
+require 'active_record'
+require 'activerecord-import'
 
 # Provide a database-backed enumeration between indices and symbolic
 # values. This allows us to have a valid foreign key which behaves like a
@@ -44,6 +44,7 @@ module PersistentEnum
              else
                m = target_class.value_of(enum_member)
                raise NameError.new("#{target_class}: Invalid enum constant '#{enum_member}'") if m.nil?
+
                m.ordinal
              end
         write_attribute(foreign_key, id)
@@ -61,8 +62,9 @@ module PersistentEnum
   EnumSpec = Struct.new(:constant_block, :constant_hash, :name_attr, :sql_enum_type) do
     def initialize(constant_block, constant_hash, name_attr, sql_enum_type)
       unless constant_block.nil? ^ constant_hash.nil?
-        raise ArgumentError.new("Constants must be provided by exactly one of hash argument or builder block")
+        raise ArgumentError.new('Constants must be provided by exactly one of hash argument or builder block')
       end
+
       super(constant_block, constant_hash, name_attr.to_s, sql_enum_type)
       freeze
     end
@@ -104,7 +106,7 @@ module PersistentEnum
     # by name using `ALTER TYPE` before insertion. This ensures that enum table
     # ids will have predictable values and can therefore be used in database
     # level constraints.
-    def cache_constants(model, required_members, name_attr: "name", required_attributes: nil, sql_enum_type: nil)
+    def cache_constants(model, required_members, name_attr: 'name', required_attributes: nil, sql_enum_type: nil)
       # normalize member specification
       unless required_members.is_a?(Hash)
         required_members = required_members.each_with_object({}) { |c, h| h[c] = {} }
@@ -137,7 +139,7 @@ module PersistentEnum
           # application to be initialized enough to run the Rake task (e.g.
           # db:migrate).
           log_warning("Database table initialization error for model #{model.name}, "\
-                      "initializing constants with dummy records instead: " +
+                      'initializing constants with dummy records instead: ' +
                       ex.message)
           cache_constants_in_dummy_class(model, name_attr, required_members, required_attributes, sql_enum_type)
         end
@@ -148,16 +150,14 @@ module PersistentEnum
     # Given an 'enum-like' table with (id, name, ...) structure, load existing
     # records from the database and cache them in constants on this class
     def cache_records(model, name_attr: :name)
-      begin
-        if model.table_exists?
-          values = model.scoped
-          cache_values(model, values, name_attr)
-        else
-          puts "Database table for model #{model.name} doesn't exist, no constants cached."
-        end
-      rescue ActiveRecord::NoDatabaseError
-        puts "Database for model #{model.name} doesn't exist, no constants cached."
+      if model.table_exists?
+        values = model.scoped
+        cache_values(model, values, name_attr)
+      else
+        puts "Database table for model #{model.name} doesn't exist, no constants cached."
       end
+    rescue ActiveRecord::NoDatabaseError
+      puts "Database for model #{model.name} doesn't exist, no constants cached."
     end
 
     def dummy_class(model, name_attr)
@@ -166,6 +166,7 @@ module PersistentEnum
         unless dummy_class.superclass == AbstractDummyModel && dummy_class.name_attr == name_attr
           raise NameError.new("PersistentEnum dummy class type mismatch: '#{dummy_class.inspect}' does not match '#{model.name}'")
         end
+
         dummy_class
       else
         nil
@@ -183,7 +184,7 @@ module PersistentEnum
         raise EnumTableInvalid.new("Database for model #{model.name} doesn't exist")
       end
 
-      internal_attributes = ["id", name_attr]
+      internal_attributes = ['id', name_attr]
       table_attributes = (model.column_names - internal_attributes)
 
       # If not otherwise specified, non-null attributes without defaults are required
@@ -231,7 +232,7 @@ module PersistentEnum
 
         new_attrs = attrs.dup
         new_attrs[name_attr] = name
-        new_attrs["id"] = name if sql_enum_type
+        new_attrs['id'] = name if sql_enum_type
         (optional_attributes - attr_names).each do |default_attr|
           new_attrs[default_attr] = column_defaults[default_attr]
         end
@@ -244,7 +245,7 @@ module PersistentEnum
       end
     end
 
-    def cache_constants_in_dummy_class(model, name_attr, required_members, required_attributes, sql_enum_type)
+    def cache_constants_in_dummy_class(model, name_attr, required_members, _required_attributes, sql_enum_type)
       dummyclass = build_dummy_class(model, name_attr)
 
       next_id = 999999999
@@ -300,9 +301,9 @@ module PersistentEnum
         connection.execute("SELECT pg_advisory_lock(#{ENUM_TYPE_LOCK_KEY})")
 
         quoted_type = connection.quote_table_name(sql_enum_type)
-        current_members = connection.select_values(<<-SQL)
-        SELECT unnest(enum_range(null::#{quoted_type}, null::#{quoted_type}));
-      SQL
+        current_members = connection.select_values(<<~SQL)
+          SELECT unnest(enum_range(null::#{quoted_type}, null::#{quoted_type}));
+        SQL
 
         (names - current_members).each do |name|
           connection.execute("ALTER TYPE #{quoted_type} ADD VALUE #{connection.quote(name)}")
@@ -341,6 +342,7 @@ module PersistentEnum
     def constant_name(member_name)
       value = member_name.strip.gsub(/[^\w\s-]/, '_').underscore
       return nil if value.blank?
+
       value.gsub!(/\s+/, '_')
       value.gsub!(/_{2,}/, '_')
       value.upcase!
@@ -373,7 +375,7 @@ module PersistentEnum
 
       def read_attribute(attr)
         case attr.to_s
-        when "id"
+        when 'id'
           ordinal
         when self.class.name_attr.to_s
           enum_constant
@@ -389,6 +391,7 @@ module PersistentEnum
           unless args.empty?
             raise ArgumentError.new("wrong number of arguments (#{args.size} for 0)")
           end
+
           attributes[meth]
         else
           super

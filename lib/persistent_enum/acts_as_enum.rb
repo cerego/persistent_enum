@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-require "active_support"
-require "active_record"
+require 'active_support'
+require 'active_record'
 
 module PersistentEnum
   module ActsAsEnum
@@ -105,6 +105,7 @@ module PersistentEnum
       def reinitialize_acts_as_enum
         current_state = _acts_as_enum_state
         raise "Cannot refresh acts_as_enum type #{self.name}: not already initialized!" if current_state.nil?
+
         initialize_acts_as_enum(current_state.enum_spec)
       end
 
@@ -121,6 +122,7 @@ module PersistentEnum
           unless _acts_as_enum_state.insensitive_lookup?
             raise RuntimeError.new("#{self.name} constants are case-dependent: cannot perform case-insensitive lookup")
           end
+
           _acts_as_enum_state.by_name_insensitive[name.downcase]
         else
           _acts_as_enum_state.by_name[name]
@@ -130,6 +132,7 @@ module PersistentEnum
       def value_of!(name, insensitive: false)
         v = value_of(name, insensitive: insensitive)
         raise NameError.new("#{self}: Invalid member '#{name}'") unless v.present?
+
         v
       end
 
@@ -182,19 +185,18 @@ module PersistentEnum
       read_attribute(:id)
     end
 
-
     # Is this enum member still present in the enum declaration?
     def active?
       self.class.active?(self)
     end
 
     class << self
-      KNOWN_ENUMERATIONS = {}
+      @@known_enumerations = {}
       LOCK = Monitor.new
 
       def register_acts_as_enum(clazz)
         LOCK.synchronize do
-          KNOWN_ENUMERATIONS[clazz.name] = clazz
+          @@known_enumerations[clazz.name] = clazz
         end
       end
 
@@ -202,22 +204,23 @@ module PersistentEnum
       # may have changed (e.g. fixture loading).
       def reinitialize_enumerations
         LOCK.synchronize do
-          KNOWN_ENUMERATIONS.each_value do |clazz|
+          @@known_enumerations.each_value do |clazz|
             clazz.reinitialize_acts_as_enum
           end
         end
       end
 
-      # Ensure that all KNOWN_ENUMERATIONS are loaded by resolving each name
+      # Ensure that all known_enumerations are loaded by resolving each name
       # constant and reregistering the resulting class. Raises NameError if a
       # previously-encountered type cannot be resolved.
       def rerequire_known_enumerations
         LOCK.synchronize do
-          KNOWN_ENUMERATIONS.keys.each do |name|
+          @@known_enumerations.keys.each do |name|
             new_clazz = name.safe_constantize
             unless new_clazz.is_a?(Class)
               raise NameError.new("Could not resolve ActsAsEnum type '#{name}' after reload")
             end
+
             register_acts_as_enum(new_clazz)
           end
         end
