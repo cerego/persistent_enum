@@ -1,0 +1,138 @@
+version: 2.1
+
+executors:
+  ruby-sqlite: &ruby
+    parameters:
+      ruby-version:
+        type: string
+      gemfile:
+        type: string
+    environment:
+      TEST_DATABASE_ENVIRONMENT: sqlite3
+    docker:
+      - &ruby_docker_ruby
+        image: circleci/ruby:<< parameters.ruby-version >>
+        environment:
+          BUNDLE_JOBS: 3
+          BUNDLE_RETRY: 3
+          BUNDLE_PATH: vendor/bundle
+          RAILS_ENV: test
+          BUNDLE_GEMFILE: << parameters.gemfile >>
+  ruby-pg:
+    <<: *ruby
+    environment:
+      TEST_DATABASE_ENVIRONMENT: postgresql
+      PGHOST: 127.0.0.1
+      PGUSER: eikaiwa
+    docker:
+      - *ruby_docker_ruby
+      - image: circleci/postgres:11-alpine
+        environment:
+          POSTGRES_USER: eikaiwa
+          POSTGRES_DB: persistent_enum_test
+          POSTGRES_PASSWORD: ""
+  ruby-mysql:
+    <<: *ruby
+    environment:
+      TEST_DATABASE_ENVIRONMENT: mysql2
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_USER: root
+    docker:
+      - *ruby_docker_ruby
+      - image: tkuchiki/delayed-mysql
+        environment:
+          MYSQL_ALLOW_EMPTY_PASSWORD: yes
+          MYSQL_ROOT_PASSWORD: ''
+          MYSQL_DATABASE: persistent_enum_test
+
+jobs:
+  test:
+    parameters:
+      ex:
+        type: executor
+      database-steps:
+        type: steps
+        default: []
+    executor: << parameters.ex >>
+    parallelism: 1
+    steps:
+      - checkout
+
+      - run:
+          # Remove the non-appraisal gemfile for safety: we never want to use it.
+          name: Prepare bundler
+          command: bundle -v && rm Gemfile
+
+      - run:
+          name: Compute a gemfile lock
+          command: bundle lock && cp "${BUNDLE_GEMFILE}.lock" /tmp/gem-lock
+
+      - restore_cache:
+          keys:
+            - iknow_viewmodels-{{ checksum "/tmp/gem-lock" }}
+            - iknow_viewmodels-
+
+      - run:
+          name: Bundle Install
+          command: bundle check || bundle install
+
+      - save_cache:
+          key: iknow_viewmodels-{{ checksum "/tmp/gem-lock" }}
+          paths:
+            - vendor/bundle
+
+      - steps: << parameters.database-steps >>
+
+      - run:
+          name: Run rspec
+          command: bundle exec rspec --profile 10 --format RspecJunitFormatter --out test_results/rspec.xml --format progress
+
+      - store_test_results:
+          path: test_results
+
+workflows:
+  version: 2
+  build:
+    jobs:
+      - test:
+          name: 'ruby 2.6 rails 5.2 sqlite'
+          ex:
+            name: ruby-sqlite
+            ruby-version: "2.6"
+            gemfile: gemfiles/rails_5_2.gemfile
+      - test:
+          name: 'ruby 2.6 rails 6.0 sqlite'
+          ex:
+            name: ruby-sqlite
+            ruby-version: "2.6"
+            gemfile: gemfiles/rails_6_0_beta.gemfile
+      - test:
+          name: 'ruby 2.6 rails 5.2 pg'
+          ex:
+            name: ruby-pg
+            ruby-version: "2.6"
+            gemfile: gemfiles/rails_5_2.gemfile
+          database-steps: &pg_wait
+            - run: dockerize -wait tcp://localhost:5432 -timeout 1m
+      - test:
+          name: 'ruby 2.6 rails 6.0 pg'
+          ex:
+            name: ruby-pg
+            ruby-version: "2.6"
+            gemfile: gemfiles/rails_6_0_beta.gemfile
+          database-steps: *pg_wait
+      - test:
+          name: 'ruby 2.6 rails 5.2 mysql'
+          ex:
+            name: ruby-mysql
+            ruby-version: "2.6"
+            gemfile: gemfiles/rails_5_2.gemfile
+          database-steps: &mysql_wait
+            - run: dockerize -wait tcp://localhost:3306 -timeout 1m
+      - test:
+          name: 'ruby 2.6 rails 6.0 mysql'
+          ex:
+            name: ruby-mysql
+            ruby-version: "2.6"
+            gemfile: gemfiles/rails_6_0_beta.gemfile
+          database-steps: *mysql_wait
