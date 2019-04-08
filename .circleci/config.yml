@@ -2,7 +2,7 @@ version: 2.1
 
 executors:
   ruby-sqlite: &ruby
-    parameters:
+    parameters: &ruby_params
       ruby-version:
         type: string
         default: "2.6"
@@ -22,26 +22,36 @@ executors:
           BUNDLE_GEMFILE: << parameters.gemfile >>
   ruby-pg:
     <<: *ruby
+    parameters:
+      <<: *ruby_params
+      pg-version:
+        type: string
+        default: "11"
     environment:
       TEST_DATABASE_ENVIRONMENT: postgresql
       PGHOST: 127.0.0.1
       PGUSER: eikaiwa
     docker:
       - *ruby_docker_ruby
-      - image: circleci/postgres:11-alpine
+      - image: circleci/postgres:<< parameters.pg-version >>-alpine
         environment:
           POSTGRES_USER: eikaiwa
           POSTGRES_DB: persistent_enum_test
           POSTGRES_PASSWORD: ""
   ruby-mysql:
     <<: *ruby
+    parameters:
+      <<: *ruby_params
+      mysql-version:
+        type: string
+        default: "5.6"
     environment:
       TEST_DATABASE_ENVIRONMENT: mysql2
       MYSQL_HOST: 127.0.0.1
       MYSQL_USER: root
     docker:
       - *ruby_docker_ruby
-      - image: tkuchiki/delayed-mysql
+      - image: circleci/mysql:<< parameters.mysql-version >>
         environment:
           MYSQL_ALLOW_EMPTY_PASSWORD: yes
           MYSQL_ROOT_PASSWORD: ''
@@ -50,12 +60,19 @@ executors:
 jobs:
   test:
     parameters:
-      ex:
-        type: executor
+      executor-name:
+        type: string
+      ruby-version:
+        type: string
+      gemfile:
+        type: string
       database-steps:
         type: steps
         default: []
-    executor: << parameters.ex >>
+    executor:
+      name: << parameters.executor-name >>
+      ruby-version: << parameters.ruby-version >>
+      gemfile: << parameters.gemfile >>
     parallelism: 1
     steps:
       - checkout
@@ -114,45 +131,39 @@ workflows:
     jobs:
       - test:
           name: 'ruby 2.6 rails 5.2 sqlite'
-          ex:
-            name: ruby-sqlite
-            ruby-version: "2.6"
-            gemfile: gemfiles/rails_5_2.gemfile
+          executor-name: ruby-sqlite
+          ruby-version: "2.6"
+          gemfile: gemfiles/rails_5_2.gemfile
       - test:
           name: 'ruby 2.6 rails 6.0 sqlite'
-          ex:
-            name: ruby-sqlite
-            ruby-version: "2.6"
-            gemfile: gemfiles/rails_6_0_beta.gemfile
+          executor-name: ruby-sqlite
+          ruby-version: "2.6"
+          gemfile: gemfiles/rails_6_0_beta.gemfile
       - test:
           name: 'ruby 2.6 rails 5.2 pg'
-          ex:
-            name: ruby-pg
-            ruby-version: "2.6"
-            gemfile: gemfiles/rails_5_2.gemfile
+          executor-name: ruby-pg
+          ruby-version: "2.6"
+          gemfile: gemfiles/rails_5_2.gemfile
           database-steps: &pg_wait
             - run: dockerize -wait tcp://localhost:5432 -timeout 1m
       - test:
           name: 'ruby 2.6 rails 6.0 pg'
-          ex:
-            name: ruby-pg
-            ruby-version: "2.6"
-            gemfile: gemfiles/rails_6_0_beta.gemfile
+          executor-name: ruby-pg
+          ruby-version: "2.6"
+          gemfile: gemfiles/rails_6_0_beta.gemfile
           database-steps: *pg_wait
       - test:
           name: 'ruby 2.6 rails 5.2 mysql'
-          ex:
-            name: ruby-mysql
-            ruby-version: "2.6"
-            gemfile: gemfiles/rails_5_2.gemfile
+          executor-name: ruby-mysql
+          ruby-version: "2.6"
+          gemfile: gemfiles/rails_5_2.gemfile
           database-steps: &mysql_wait
             - run: dockerize -wait tcp://localhost:3306 -timeout 1m
       - test:
           name: 'ruby 2.6 rails 6.0 mysql'
-          ex:
-            name: ruby-mysql
-            ruby-version: "2.6"
-            gemfile: gemfiles/rails_6_0_beta.gemfile
+          executor-name: ruby-mysql
+          ruby-version: "2.6"
+          gemfile: gemfiles/rails_6_0_beta.gemfile
           database-steps: *mysql_wait
       - publish:
           filters:
