@@ -265,10 +265,12 @@ module PersistentEnum
         when 'PostgreSQL'
           model.import!(rows, on_duplicate_key_update: { conflict_target: [name_attr], columns: upsert_columns })
         when 'Mysql2'
+          # Even for identical rows in the same order, a INSERT .. ON DUPLICATE
+          # KEY UPDATE or INSERT IGNORE can deadlock with itself. Obtain write
+          # locks in advance.
+          model.lock('FOR UPDATE').order(:id).pluck(:id)
+
           if upsert_columns.present?
-            # Even for identical rows in the same order, a INSERT .. ON DUPLICATE
-            # KEY UPDATE can deadlock with itself. Obtain write locks in advance.
-            model.lock('FOR UPDATE').order(:id).pluck(:id)
             model.import!(rows, on_duplicate_key_update: upsert_columns)
           else
             model.import!(rows, on_duplicate_key_ignore: true)
