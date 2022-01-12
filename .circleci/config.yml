@@ -5,7 +5,7 @@ executors:
     parameters: &ruby_params
       ruby-version:
         type: string
-        default: "2.6"
+        default: "2.7"
       gemfile:
         type: string
         default: "Gemfile"
@@ -26,7 +26,7 @@ executors:
       <<: *ruby_params
       pg-version:
         type: string
-        default: "11"
+        default: "12"
     environment:
       TEST_DATABASE_ENVIRONMENT: postgresql
       PGHOST: 127.0.0.1
@@ -44,7 +44,7 @@ executors:
       <<: *ruby_params
       mysql-version:
         type: string
-        default: "5.6"
+        default: "5.7"
     environment:
       TEST_DATABASE_ENVIRONMENT: mysql2
       MYSQL_HOST: 127.0.0.1
@@ -130,40 +130,57 @@ workflows:
   build:
     jobs:
       - test:
-          name: 'ruby 2.6 rails 5.2 sqlite'
+          name: 'ruby 2.7 rails 5.2 sqlite'
           executor-name: ruby-sqlite
-          ruby-version: "2.6"
+          ruby-version: "2.7"
           gemfile: gemfiles/rails_5_2.gemfile
       - test:
-          name: 'ruby 2.6 rails 6.0 sqlite'
+          name: 'ruby 3.0 rails 6.1 sqlite'
           executor-name: ruby-sqlite
-          ruby-version: "2.6"
-          gemfile: gemfiles/rails_6_0_beta.gemfile
+          ruby-version: "3.0"
+          gemfile: gemfiles/rails_6_1.gemfile
       - test:
-          name: 'ruby 2.6 rails 5.2 pg'
+          name: 'ruby 3.0 rails 7.0 sqlite'
+          executor-name: ruby-sqlite
+          ruby-version: "3.0"
+          gemfile: gemfiles/rails_7_0.gemfile
+      - test:
+          name: 'ruby 2.7 rails 5.2 pg'
           executor-name: ruby-pg
-          ruby-version: "2.6"
+          ruby-version: "2.7"
           gemfile: gemfiles/rails_5_2.gemfile
           database-steps: &pg_wait
             - run: dockerize -wait tcp://localhost:5432 -timeout 1m
       - test:
-          name: 'ruby 2.6 rails 6.0 pg'
+          name: 'ruby 3.0 rails 6.1 pg'
           executor-name: ruby-pg
-          ruby-version: "2.6"
-          gemfile: gemfiles/rails_6_0_beta.gemfile
+          ruby-version: "3.0"
+          gemfile: gemfiles/rails_6_1.gemfile
           database-steps: *pg_wait
       - test:
-          name: 'ruby 2.6 rails 5.2 mysql'
+          name: 'ruby 3.0 rails 7.0 pg'
+          executor-name: ruby-pg
+          ruby-version: "3.0"
+          gemfile: gemfiles/rails_7_0.gemfile
+          database-steps: *pg_wait
+      - test:
+          name: 'ruby 2.7 rails 5.2 mysql'
           executor-name: ruby-mysql
-          ruby-version: "2.6"
+          ruby-version: "2.7"
           gemfile: gemfiles/rails_5_2.gemfile
           database-steps: &mysql_wait
             - run: dockerize -wait tcp://localhost:3306 -timeout 1m
       - test:
-          name: 'ruby 2.6 rails 6.0 mysql'
+          name: 'ruby 3.0 rails 6.1 mysql'
           executor-name: ruby-mysql
-          ruby-version: "2.6"
-          gemfile: gemfiles/rails_6_0_beta.gemfile
+          ruby-version: "3.0"
+          gemfile: gemfiles/rails_6_1.gemfile
+          database-steps: *mysql_wait
+      - test:
+          name: 'ruby 3.0 rails 7.0 mysql'
+          executor-name: ruby-mysql
+          ruby-version: "3.0"
+          gemfile: gemfiles/rails_7_0.gemfile
           database-steps: *mysql_wait
       - publish:
           filters:

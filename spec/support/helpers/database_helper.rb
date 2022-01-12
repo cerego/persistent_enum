@@ -62,6 +62,8 @@ module DatabaseHelper
       clazz.connection.drop_table(table_name, force: :cascade)
     end
 
-    ActiveSupport::Dependencies::Reference.clear!
+    if ActiveSupport::VERSION::MAJOR < 7
+      ActiveSupport::Dependencies::Reference.clear!
+    end
   end
 end
