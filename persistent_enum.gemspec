@@ -18,8 +18,8 @@ Gem::Specification.new do |spec|
   spec.test_files    = spec.files.grep(%r{^(test|spec|features)/})
   spec.require_paths = ['lib']
 
-  spec.add_dependency 'activerecord', '>= 5.0', '< 7'
-  spec.add_dependency 'activesupport', '>= 5.0', '< 7'
+  spec.add_dependency 'activerecord', '>= 5.0', '< 8'
+  spec.add_dependency 'activesupport', '>= 5.0', '< 8'
 
   spec.add_dependency 'activerecord-import'
 

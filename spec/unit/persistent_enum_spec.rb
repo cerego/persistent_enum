@@ -149,7 +149,6 @@ RSpec.describe PersistentEnum, :database do
   context 'with a validation on the model' do
     let(:model) do
       create_test_model(:with_table, ->(t) { t.string :name; t.index [:name], unique: true }) do
-        yield if block_given?
         validates :name, exclusion: { in: [CONSTANTS.first.to_s] }
         acts_as_enum(CONSTANTS)
       end
