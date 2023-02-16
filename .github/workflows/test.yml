@@ -6,6 +6,8 @@ on:
 
 permissions:
   contents: read
+  checks: write
+  pull-requests: write
 
 jobs:
   test:
@@ -69,6 +71,14 @@ jobs:
       run: bundle exec rspec --profile 10 --format RspecJunitFormatter --out test_results/rspec.xml --format progress
     - name: Upload result
       uses: actions/upload-artifact@v3
+      if: always()
       with:
-        name: rspec_${{ matrix.ruby-version }}-${{ matrix.database }}.xml
+        name: rspec_{{ matrix.rails-version }}-${{ matrix.database }}.xml
         path: test_results/rspec.xml
+    - name: Test Report
+      uses: dorny/test-reporter@v1
+      if: always()
+      with:
+        name: Rspec Tests - Rails ${{ matrix.rails-version }} - ${{ matrix.database }}
+        path: test_results/rspec.xml
+        reporter: java-junit
