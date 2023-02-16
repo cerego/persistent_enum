@@ -1,0 +1,74 @@
+name: Run Tests
+
+on:
+  pull_request:
+    branches: "**"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:5.7
+        ports:
+          - "3306:3306"
+        env:
+          MYSQL_DATABASE: persistent_enum_test
+          MYSQL_USER: user
+          MYSQL_PASSWORD: password
+          MYSQL_ROOT_PASSWORD: rootpassword
+          options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+      postgres:
+        image: postgres:13-alpine
+        ports:
+          - "5432:5432"
+        env:
+          POSTGRES_DB: persistent_enum_test
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+
+    strategy:
+      fail-fast: false
+      matrix:
+        rails-version: ['5.2', '6.1', '7.0']
+        database: ['mysql', 'postgresql', 'sqlite']
+        include:
+          - database: mysql
+            database-url: "mysql2://user:password@127.0.0.1:3306/persistent_enum_test"
+          - database: postgresql
+            database-url: "postgres://user:password@localhost:5432/persistent_enum_test"
+          - database: sqlite
+            database-url: "sqlite3::memory:"
+          - rails-version: '5.2'
+            ruby-version: '2.7'
+            bundle-gemfile: gemfiles/rails_5_2.gemfile
+          - rails-version: '6.1'
+            ruby-version: '3.0'
+            bundle-gemfile: gemfiles/rails_6_1.gemfile
+          - rails-version: '7.0'
+            ruby-version: '3.2'
+            bundle-gemfile: gemfiles/rails_7_0.gemfile
+
+    env: # $BUNDLE_GEMFILE must be set at the job level, so it is set for all steps
+      BUNDLE_GEMFILE: ${{ github.workspace }}/${{ matrix.bundle-gemfile }}
+      DATABASE_URL: ${{ matrix.database-url }}
+      TEST_DATABASE_ENVIRONMENT: ${{ matrix.database }}
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ matrix.ruby-version }}
+        bundler-cache: true # runs 'bundle install' and caches installed gems automatically
+    - name: Run tests
+      run: bundle exec rspec --profile 10 --format RspecJunitFormatter --out test_results/rspec.xml --format progress
+    - name: Upload result
+      uses: actions/upload-artifact@v3
+      with:
+        name: rspec_${{ matrix.ruby-version }}-${{ matrix.database }}.xml
+        path: test_results/rspec.xml
