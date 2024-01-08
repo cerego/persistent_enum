@@ -16,6 +16,14 @@ module PersistentEnum
   class EnumTableInvalid < RuntimeError; end
   class MissingEnumTypeError < RuntimeError; end
 
+  MISSING_DATABASE_ERRORS =
+    begin
+      errs = [ActiveRecord::NoDatabaseError]
+      # Added with Rails 7
+      errs << ActiveRecord::DatabaseConnectionError if ActiveRecord.const_defined?(:DatabaseConnectionError)
+      errs.freeze
+    end
+
   module ClassMethods
     def acts_as_enum(required_constants, name_attr: :name, sql_enum_type: nil, &constant_init_block)
       include ActsAsEnum
@@ -156,7 +164,7 @@ module PersistentEnum
       else
         puts "Database table for model #{model.name} doesn't exist, no constants cached."
       end
-    rescue ActiveRecord::NoDatabaseError
+    rescue *MISSING_DATABASE_ERRORS
       puts "Database for model #{model.name} doesn't exist, no constants cached."
     end
 
@@ -180,7 +188,7 @@ module PersistentEnum
         unless model.table_exists?
           raise EnumTableInvalid.new("Database table for model #{model.name} doesn't exist")
         end
-      rescue ActiveRecord::NoDatabaseError
+      rescue *MISSING_DATABASE_ERRORS
         raise EnumTableInvalid.new("Database for model #{model.name} doesn't exist")
       end
 
