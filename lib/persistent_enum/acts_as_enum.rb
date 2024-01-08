@@ -79,7 +79,7 @@ module PersistentEnum
           if table_exists?
             all_values.concat(unscoped { where.not(id: required_values) })
           end
-        rescue ActiveRecord::NoDatabaseError
+        rescue *PersistentEnum::MISSING_DATABASE_ERRORS
           # Nothing additional to cache.
         end
 
