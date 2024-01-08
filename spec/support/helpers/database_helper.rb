@@ -9,13 +9,19 @@ module DatabaseHelper
   end
 
   def self.initialize_database
-    db_config_path = File.join(File.dirname(__FILE__), '../config/database.yml')
-    db_config_data = File.read(db_config_path)
-    db_config_data = ERB.new(db_config_data).result
-    db_config = YAML.safe_load(db_config_data)
-    raise 'Test database configuration missing' unless db_config[db_env]
+    if (url = ENV['DATABASE_URL'])
+      db_config = url
+    else
+      db_config_path = File.join(File.dirname(__FILE__), '../config/database.yml')
+      db_config_data = File.read(db_config_path)
+      db_config_data = ERB.new(db_config_data).result
+      db_config = YAML.safe_load(db_config_data)
+      raise 'Test database configuration missing' unless db_config[db_env]
 
-    ActiveRecord::Base.establish_connection(db_config[db_env])
+      db_config = db_config[db_env]
+    end
+
+    ActiveRecord::Base.establish_connection(db_config)
 
     if ENV['DEBUG']
       ActiveRecord::Base.logger = Logger.new(STDERR)
